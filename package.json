@@ -2,7 +2,7 @@
   "name": "mi-app",
   "private": true,
   "version": "0.0.0",
-  "homepage": "https://tomasvivanco.github.io/mi-app",
+  "homepage": "https://tomasvivanco.github.io/tituloDNO",
   "type": "module",
   "scripts": {
     "dev": "vite",
