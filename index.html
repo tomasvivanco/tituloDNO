@@ -31,10 +31,9 @@ const MEM=new Map();
 function fsKey(k){return k.replace(/[^a-zA-Z0-9-]/g,"_");}
 const FBURL=()=>`https://firestore.googleapis.com/v1/projects/${FBCFG.projectId}/databases/(default)/documents/app_data`;
 const S={
-  async get(k){
-    const m=MEM.get(k);
-    if(m!==undefined)return JSON.parse(m);
-    if(!FBCFG.projectId||FBCFG.projectId==="TU_PROJECT_ID")return null;
+  async get(k,skipCache){
+    if(!skipCache){const m=MEM.get(k);if(m!==undefined)return JSON.parse(m);}
+    if(!FBCFG.projectId||FBCFG.projectId==="TU_PROJECT_ID")return MEM.has(k)?JSON.parse(MEM.get(k)):null;
     try{
       const r=await fetch(`${FBURL()}/${fsKey(k)}?key=${FBCFG.apiKey}`);
       if(!r.ok)return null;
@@ -44,6 +43,7 @@ const S={
     }catch{}
     return null;
   },
+  async fresh(k){return this.get(k,true);},
   async set(k,v){
     const s=JSON.stringify(v);
     MEM.set(k,s);
@@ -133,11 +133,11 @@ const DB={
     await S.set("invites:all",[]);
     await S.set("init:v7",true);
   },
-  async getUsers(){return(await S.get("users:all"))||[];},
+  async getUsers(){return(await S.fresh("users:all"))||[];},
   async setUsers(d){await S.set("users:all",d);},
-  async getAuth(){return(await S.get("auth:all"))||{};},
+  async getAuth(){return(await S.fresh("auth:all"))||{};},
   async setAuth(d){await S.set("auth:all",d);},
-  async getSections(){return(await S.get("sections:all"))||[];},
+  async getSections(){return(await S.fresh("sections:all"))||[];},
   async setSections(d){await S.set("sections:all",d);},
   async getGantt(sid){return(await S.get("gantt:"+sid))||IGANG;},
   async setGantt(sid,d){await S.set("gantt:"+sid,d);},
@@ -149,7 +149,7 @@ const DB={
   async setRubric(uid,d){await S.set("rubric:"+uid,d);},
   async getCrossEval(uid){return(await S.get("crosseval:"+uid))||{};},
   async setCrossEval(uid,d){await S.set("crosseval:"+uid,d);},
-  async getInvites(){return(await S.get("invites:all"))||[];},
+  async getInvites(){return(await S.fresh("invites:all"))||[];},
   async setInvites(d){await S.set("invites:all",d);},
   async findInvite(email){const inv=await this.getInvites();return inv.find(i=>i.email.toLowerCase()===email.toLowerCase())||null;},
 };
@@ -1251,7 +1251,7 @@ function Sidebar({user,view,setView,section,sections,onSelectSection,onLogout,op
 function App(){
   const [ready,setReady]=useState(false);const [user,setUser]=useState(null);const [mustChg,setMustChg]=useState(false);const [view,setView]=useState("home");const [sbOpen,setSbOpen]=useState(false);const [allUsers,setAllUsers]=useState([]);const [sections,setSections]=useState([]);const [curSec,setCurSec]=useState(null);const [stuData,setStuData]=useState({});const [ganttData,setGanttData]=useState({});const [resData,setResData]=useState({});const [peerAssigns,setPeerAssigns]=useState([]);
 
-  useEffect(()=>{(async()=>{try{await DB.init();const[u,secs]=await Promise.all([DB.getUsers(),DB.getSections()]);setAllUsers(u||[]);setSections(secs||ISECS);}catch(e){setAllUsers(IUSERS.map(({pw:_,mc:__,...u})=>u));setSections(ISECS);}setReady(true);})();},[]);
+  useEffect(()=>{(async()=>{try{await DB.init();const[u,secs]=await Promise.all([DB.getUsers(),DB.getSections()]);setAllUsers(u||[]);setSections(secs||[]);}catch(e){setAllUsers([]);setSections([]);}setReady(true);})();},[]);
 
   useEffect(()=>{if(!user)return;(async()=>{const stus=allUsers.filter(u=>u.role==="student");const d={};for(const s of stus){d[s.id]={stages:await DB.getStages(s.id)||mkStages()};}setStuData(d);const sids=[...new Set(allUsers.filter(u=>u.role==="student"&&u.sectionId).map(u=>u.sectionId))];const g={},r={};for(const sid of sids){g[sid]=await DB.getGantt(sid);r[sid]=await DB.getRes(sid);}setGanttData(g);setResData(r);})();},[user,allUsers]);
 
