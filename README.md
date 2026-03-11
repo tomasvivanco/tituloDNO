@@ -1,16 +1,34 @@
-# React + Vite
+# titulodno_2 (base local)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Esta versión toma la app original como base y aplica 4 fases de mejora en un MVP funcional local:
 
-Currently, two official plugins are available:
+1. **Registro y acceso seguro**
+   - Login y registro en español.
+   - Registro solo mediante **token de invitación**.
+   - Solo se permiten correos institucionales `@uc.cl`.
+   - Contraseñas hasheadas con SHA-256 + salt (Web Crypto API).
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+2. **Datos y almacenamiento estructurado**
+   - Modelo único en `localStorage` para usuarios, secciones, matrículas, invitaciones, recursos y archivos.
 
-## React Compiler
+3. **Gestión de archivos**
+   - Adjuntos por recurso con lectura local (Data URL) y descarga desde la interfaz.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+4. **Usabilidad**
+   - Flujo simple por rol (profesor / estudiante).
+   - Mensajes de validación claros y UI compacta.
 
-## Expanding the ESLint configuration
+## Restricción institucional
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+- El acceso y las invitaciones aceptan únicamente correos que terminen en `@uc.cl`.
+
+## Ejecutar
+
+```bash
+npm install
+npm run dev
+```
+
+Demo:
+- `profesora.demo@uc.cl` / `Demo2026!`
+- `estudiante.demo@uc.cl` / `Demo2026!`
