@@ -4,6 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Seminario de Titulo - Diseno UC</title>
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+  <!-- React + Babel -->
   <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
@@ -11,49 +15,43 @@
 </head>
 <body>
 <div id="root"></div>
+<!-- Firebase config — reemplaza con tus valores -->
+<script>
+  firebase.initializeApp({
+    apiKey:    "AIzaSyD_yOmqNRKCYPFrwzUQ-BOlLc1AxWZmEfE",
+    authDomain:"titulodno.firebaseapp.com",
+    projectId: "titulodno",
+  });
+  window.DB_FS = firebase.firestore();
+</script>
 <script type="text/babel">
-// =============================================================
-//  CONFIGURACION FIREBASE
-//  1. Ve a https://console.firebase.google.com
-//  2. Crea un proyecto, luego "Agregar app web"
-//  3. Copia los valores aqui:
-// =============================================================
-const FBCFG = {
-  apiKey:    "AIzaSyD_yOmqNRKCYPFrwzUQ-BOlLc1AxWZmEfE",
-  projectId: "titulodno",
-};
-// =============================================================
 
 const { useState, useEffect, useRef } = React;
 
 const T={bg:"#F4F2ED",surface:"#FFF",ink:"#13120F",ink2:"#524C43",ink3:"#9E9488",rule:"#DDD8CE",accent:"#D94E1A",green:"#157A42",greenBg:"#E4F5EC",amber:"#C07800",amberBg:"#FFF3D0",blue:"#1762B5",blueBg:"#E0EAFC",violet:"#7035C4",violetBg:"#EDE5F9",red:"#D12626",redBg:"#FDEAEA",sidebar:"#13120F",sidebarT:"#F4F2ED",sidebarM:"#5E584F"};
 const MEM=new Map();
-function fsKey(k){return k.replace(/[^a-zA-Z0-9-]/g,"_");}
-const FBURL=()=>`https://firestore.googleapis.com/v1/projects/${FBCFG.projectId}/databases/(default)/documents/app_data`;
+function fsKey(k){return k.replace(/[:/]/g,"__");}
 const S={
-  async get(k,skipCache){
-    if(!skipCache){const m=MEM.get(k);if(m!==undefined)return JSON.parse(m);}
-    if(!FBCFG.projectId||FBCFG.projectId==="TU_PROJECT_ID")return MEM.has(k)?JSON.parse(MEM.get(k)):null;
+  async get(k){
+    const m=MEM.get(k);if(m!==undefined)return JSON.parse(m);
     try{
-      const r=await fetch(`${FBURL()}/${fsKey(k)}?key=${FBCFG.apiKey}`);
-      if(!r.ok)return null;
-      const d=await r.json();
-      const v=d.fields&&d.fields.v&&d.fields.v.stringValue;
-      if(v){MEM.set(k,v);return JSON.parse(v);}
-    }catch{}
+      const doc=await window.DB_FS.collection("app").doc(fsKey(k)).get();
+      if(doc.exists){const v=doc.data().v;MEM.set(k,v);return JSON.parse(v);}
+    }catch(e){console.warn("FB get",k,e);}
     return null;
   },
-  async fresh(k){return this.get(k,true);},
-  async set(k,v){
-    const s=JSON.stringify(v);
-    MEM.set(k,s);
-    if(!FBCFG.projectId||FBCFG.projectId==="TU_PROJECT_ID")return true;
+  async fresh(k){
     try{
-      await fetch(`${FBURL()}/${fsKey(k)}?key=${FBCFG.apiKey}`,{
-        method:"PATCH",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({fields:{v:{stringValue:s}}})
-      });
-    }catch{}
+      const doc=await window.DB_FS.collection("app").doc(fsKey(k)).get();
+      if(doc.exists){const v=doc.data().v;MEM.set(k,v);return JSON.parse(v);}
+    }catch(e){console.warn("FB fresh",k,e);}
+    return null;
+  },
+  async set(k,v){
+    const s=JSON.stringify(v);MEM.set(k,s);
+    try{
+      await window.DB_FS.collection("app").doc(fsKey(k)).set({v:s});
+    }catch(e){console.warn("FB set",k,e);}
     return true;
   },
 };
