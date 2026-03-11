@@ -2,86 +2,58 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
   <title>Seminario de Titulo - Diseno UC</title>
-  <!-- React + Babel (load first, synchronously) -->
   <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
-  <style>html,body{height:100%;margin:0;padding:0;background:#F4F2ED;}#root{height:100%;position:relative;}*{-webkit-tap-highlight-color:rgba(0,0,0,0.05);}@supports(padding:max(0px)){.mob-safe{padding-bottom:max(0px,env(safe-area-inset-bottom));}}</style>
+  <style>html,body{height:100%;margin:0;padding:0;background:#F4F2ED;}#root{height:100%;position:relative;}*{-webkit-tap-highlight-color:rgba(0,0,0,0.05);box-sizing:border-box;}</style>
 </head>
 <body>
 <div id="root"></div>
-<!-- Firebase: carga dinamica garantizada antes de React -->
-<script>
-(function(){
-  var FBVER="10.12.0";
-  var loaded=0;
-  var scripts=[
-    "https://www.gstatic.com/firebasejs/"+FBVER+"/firebase-app-compat.js",
-    "https://www.gstatic.com/firebasejs/"+FBVER+"/firebase-firestore-compat.js",
-    "https://www.gstatic.com/firebasejs/"+FBVER+"/firebase-storage-compat.js"
-  ];
-  function tryInit(){
-    if(typeof firebase==="undefined")return;
-    if(!firebase.apps||firebase.apps.length===0){
-      firebase.initializeApp({
-        apiKey:"AIzaSyD_yOmqNRKCYPFrwzUQ-BOlLc1AxWZmEfE",
-        authDomain:"titulodno.firebaseapp.com",
-        projectId:"titulodno",
-        storageBucket:"titulodno.firebasestorage.app"
-      });
-    }
-    window.DB_FS=firebase.firestore();
-    window.DB_ST=firebase.storage();
-    window._fbReady=true;
-    // Tell Babel to transform now
-    if(window._babelPending){
-      var s=document.createElement("script");
-      s.type="text/babel";
-      s.textContent=window._babelPending;
-      window._babelPending=null;
-      document.body.appendChild(s);
-    }
-  }
-  function onLoad(){loaded++;if(loaded>=3)tryInit();}
-  scripts.forEach(function(src){
-    var s=document.createElement("script");
-    s.src=src;
-    s.onload=onLoad;
-    s.onerror=function(){console.error("Failed to load",src);};
-    document.head.appendChild(s);
-  });
-})();
-</script>
-<script id="app-source" type="text/plain">
+<script type="text/babel">
 
 const { useState, useEffect, useRef } = React;
 
 const T={bg:"#F4F2ED",surface:"#FFF",ink:"#13120F",ink2:"#524C43",ink3:"#9E9488",rule:"#DDD8CE",accent:"#D94E1A",green:"#157A42",greenBg:"#E4F5EC",amber:"#C07800",amberBg:"#FFF3D0",blue:"#1762B5",blueBg:"#E0EAFC",violet:"#7035C4",violetBg:"#EDE5F9",red:"#D12626",redBg:"#FDEAEA",sidebar:"#13120F",sidebarT:"#F4F2ED",sidebarM:"#5E584F"};
 const MEM=new Map();
-function fsKey(k){return k.replace(/[:/]/g,"__");}
+// Storage: IndexedDB (primary) + localStorage (fallback) — no external CDN needed
+const IDB=(()=>{
+  let db=null;
+  const DB_NAME="seminarioDB",DB_VER=1,STORE="kv";
+  function open(){
+    return new Promise((res,rej)=>{
+      if(db)return res(db);
+      const req=indexedDB.open(DB_NAME,DB_VER);
+      req.onupgradeneeded=e=>{e.target.result.createObjectStore(STORE,{keyPath:"k"});};
+      req.onsuccess=e=>{db=e.target.result;res(db);};
+      req.onerror=()=>rej(req.error);
+    });
+  }
+  return {
+    async get(k){
+      try{const d=await open();return new Promise((res,rej)=>{const t=d.transaction(STORE,"readonly");const r=t.objectStore(STORE).get(k);r.onsuccess=()=>res(r.result?r.result.v:undefined);r.onerror=()=>rej(r.error);});}
+      catch(e){return localStorage.getItem("sdb_"+k)||undefined;}
+    },
+    async set(k,v){
+      try{const d=await open();return new Promise((res,rej)=>{const t=d.transaction(STORE,"readwrite");const r=t.objectStore(STORE).put({k,v});r.onsuccess=()=>res(true);r.onerror=()=>rej(r.error);});}
+      catch(e){try{localStorage.setItem("sdb_"+k,v);}catch(le){console.warn("Storage full",le);}return true;}
+    }
+  };
+})();
 const S={
   async get(k){
     const m=MEM.get(k);if(m!==undefined)return JSON.parse(m);
-    try{
-      const doc=await window.DB_FS.collection("app").doc(fsKey(k)).get();
-      if(doc.exists){const v=doc.data().v;MEM.set(k,v);return JSON.parse(v);}
-    }catch(e){console.warn("FB get",k,e);}
+    try{const v=await IDB.get(k);if(v!==undefined){MEM.set(k,v);return JSON.parse(v);}}catch(e){}
     return null;
   },
   async fresh(k){
-    try{
-      const doc=await window.DB_FS.collection("app").doc(fsKey(k)).get();
-      if(doc.exists){const v=doc.data().v;MEM.set(k,v);return JSON.parse(v);}
-    }catch(e){console.warn("FB fresh",k,e);}
+    try{const v=await IDB.get(k);if(v!==undefined){MEM.set(k,v);return JSON.parse(v);}}catch(e){}
     return null;
   },
   async set(k,v){
     const s=JSON.stringify(v);MEM.set(k,s);
-    try{
-      await window.DB_FS.collection("app").doc(fsKey(k)).set({v:s});
-    }catch(e){console.warn("FB set",k,e);}
+    try{await IDB.set(k,s);}catch(e){console.warn("IDB set",k,e);}
     return true;
   },
 };
@@ -405,27 +377,21 @@ function FileUpload({files,onAdd,onRemove,canEdit=true,folder="uploads"}){
   const [progress,setProgress]=useState(0);
   const handle=async(e)=>{
     const file=e.target.files[0];if(!file)return;
-    if(file.size>10*1024*1024){alert("Archivo demasiado grande. Maximo 10MB.");return;}
+    if(file.size>5*1024*1024){alert("Archivo demasiado grande. Maximo 5MB.");return;}
     e.target.value="";
-    setUploading(true);setProgress(0);
+    setUploading(true);setProgress(10);
     try{
-      if(window.DB_ST){
-        const path="files/"+folder+"/"+Date.now()+"_"+file.name.replace(/[^a-zA-Z0-9._-]/g,"_");
-        const ref=window.DB_ST.ref(path);
-        const task=ref.put(file);
-        task.on("state_changed",snap=>setProgress(Math.round(snap.bytesTransferred/snap.totalBytes*100)));
-        await task;
-        const url=await ref.getDownloadURL();
-        const entry={id:Date.now()+"",name:file.name,type:file.type,size:Math.round(file.size/1024)+"KB",url,path,date:new Date().toLocaleDateString("es-CL")};
-        onAdd(entry);
-      } else {
-        const reader=new FileReader();
-        await new Promise(res=>{reader.onload=ev=>{
+      const reader=new FileReader();
+      await new Promise((res,rej)=>{
+        reader.onload=ev=>{
+          setProgress(80);
           const entry={id:Date.now()+"",name:file.name,type:file.type,size:Math.round(file.size/1024)+"KB",data:ev.target.result,date:new Date().toLocaleDateString("es-CL")};
-          onAdd(entry);res();
-        };reader.readAsDataURL(file);});
-      }
-    }catch(err){alert("Error al subir el archivo: "+err.message);}
+          onAdd(entry);setProgress(100);res();
+        };
+        reader.onerror=rej;
+        reader.readAsDataURL(file);
+      });
+    }catch(err){alert("Error al cargar el archivo: "+err.message);}
     setUploading(false);setProgress(0);
   };
   const getFileType=(f)=>{
@@ -448,7 +414,7 @@ function FileUpload({files,onAdd,onRemove,canEdit=true,folder="uploads"}){
               <span style={{fontSize:10,color:T.ink3,flexShrink:0}}>{f.size}</span>
               <Btn v="link" sz="sm" onClick={()=>setViewing(f)}>Ver</Btn>
               <Btn v="link" sz="sm" onClick={()=>{const a=document.createElement("a");a.href=f.url||f.data;a.target="_blank";a.download=f.name;a.click();}}>Bajar</Btn>
-              {canEdit&&onRemove&&<Btn v="danger" sz="sm" onClick={()=>{if(f.path&&window.DB_ST)window.DB_ST.ref(f.path).delete().catch(()=>{});onRemove(f.id);}}>X</Btn>}
+              {canEdit&&onRemove&&<Btn v="danger" sz="sm" onClick={()=>onRemove(f.id)}>X</Btn>}
             </div>
           );
         })}
@@ -463,7 +429,7 @@ function FileUpload({files,onAdd,onRemove,canEdit=true,folder="uploads"}){
         <>
           <input type="file" ref={inp} onChange={handle} style={{display:"none"}} accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.gif,.txt,.ppt,.pptx,.xls,.xlsx"/>
           <Btn v="ghost" sz="sm" onClick={()=>inp.current&&inp.current.click()}>+ Adjuntar archivo (max 10MB)</Btn>
-          <div style={{fontSize:10,color:T.ink3,marginTop:4}}>PDF, Word, Excel, PowerPoint, imagenes. Max 10MB.</div>
+          <div style={{fontSize:10,color:T.ink3,marginTop:4}}>PDF, Word, imagenes. Max 5MB. Archivos guardados localmente.</div>
         </>
       )}
       <FileViewer file={viewing} onClose={()=>setViewing(null)}/>
@@ -1442,23 +1408,6 @@ function App(){
 
 
 ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
-</script>
-<script>
-// Extract the app source and defer until Firebase is ready
-(function(){
-  var src=document.getElementById("app-source");
-  if(!src)return;
-  var code=src.textContent;
-  src.remove();
-  function run(){
-    var s=document.createElement("script");
-    s.type="text/babel";
-    s.textContent=code;
-    document.body.appendChild(s);
-  }
-  if(window._fbReady){run();}
-  else{window._babelPending=code;}
-})();
 </script>
 </body>
 </html>
