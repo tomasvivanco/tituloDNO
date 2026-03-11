@@ -27,7 +27,7 @@ const { useState, useEffect, useRef } = React;
 
 const T={bg:"#F4F2ED",surface:"#FFF",ink:"#13120F",ink2:"#524C43",ink3:"#9E9488",rule:"#DDD8CE",accent:"#D94E1A",green:"#157A42",greenBg:"#E4F5EC",amber:"#C07800",amberBg:"#FFF3D0",blue:"#1762B5",blueBg:"#E0EAFC",violet:"#7035C4",violetBg:"#EDE5F9",red:"#D12626",redBg:"#FDEAEA",sidebar:"#13120F",sidebarT:"#F4F2ED",sidebarM:"#5E584F"};
 const MEM=new Map();
-// Storage: IndexedDB (primary) + localStorage (fallback) — no external CDN needed
+// Storage: IndexedDB (primary) + localStorage (fallback)  -  no external CDN needed
 const IDB=(()=>{
   let db=null;
   const DB_NAME="seminarioDB",DB_VER=1,STORE="kv";
@@ -166,6 +166,8 @@ const DB={
   async getInvites(){return(await S.fresh("invites:all"))||[];},
   async setInvites(d){await S.set("invites:all",d);},
   async findInvite(email){const inv=await this.getInvites();return inv.find(i=>i.email.toLowerCase()===email.toLowerCase())||null;},
+  async getApiKey(sectionId){return(await S.fresh("apikey:"+(sectionId||"global")))||null;},
+  async setApiKey(sectionId,key){await S.set("apikey:"+(sectionId||"global"),key);},
 };
 
 const GS=()=>(
@@ -289,9 +291,616 @@ function RubricaProf({uid,initial,onSave,readOnly}){
           );
         })}
       </div>
-      <div style={{padding:"12px 16px",background:T.bg,border:"1px solid "+T.rule,display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
-        <span style={{fontSize:13,fontWeight:600}}>Nota calculada:</span>
-        <span style={{fontSize:22,fontFamily:"'Cormorant Garamond',serif",fontWeight:600,color:nota>=4?T.green:T.red}}>{nota>0?nota.toFixed(1):"--"}</span>
+      <div style={{padding:"12px 16px",background:T.bg,border:"1px solid "+T.rule,marginBottom:14}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+          <span style={{fontSize:13,fontWeight:600}}>Nota calculada:</span>
+          <span style={{fontSize:24,fontFamily:"'Cormorant Garamond',serif",fontWeight:600,color:nota>=4?T.green:T.red}}>{nota>0?nota.toFixed(1):"--"}</span>
+        </div>
+        {!readOnly&&(
+          <div style={{borderTop:"1px solid "+T.rule,paddingTop:10,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+            <span style={{fontSize:11,color:T.ink3}}>Nota manual (opcional):</span>
+            <input
+              type="number" min="1" max="7" step="0.1"
+              value={data.notaManual||""}
+              onChange={e=>{const v=e.target.value;if(v===""||(!isNaN(v)&&parseFloat(v)>=1&&parseFloat(v)<=7)){setData(p=>({...p,notaManual:v}));}}}
+              placeholder="1.0 - 7.0"
+              style={{width:80,border:"1px solid "+T.rule,padding:"5px 8px",fontSize:14,fontFamily:"'Cormorant Garamond',serif",textAlign:"center",background:T.surface}}
+            />
+            {data.notaManual&&<span style={{fontSize:12,color:T.ink2}}>Nota final: <strong style={{color:parseFloat(data.notaManual)>=4?T.green:T.red}}>{parseFloat(data.notaManual).toFixed(1)}</strong></span>}
+          </div>
+        )}
+        {readOnly&&data.notaManual&&(
+          <div style={{borderTop:"1px solid "+T.rule,paddingTop:8,fontSize:12,color:T.ink2}}>
+            Nota asignada: <strong style={{color:parseFloat(data.notaManual)>=4?T.green:T.red}}>{parseFloat(data.notaManual).toFixed(1)}</strong>
+          </div>
+        )}
+      </div>
+      {!readOnly&&<Btn v="primary" sz="md" onClick={save} dis={!RUBDIMS.every(d=>data[d.id]&&data[d.id].level)}>{saved?"Guardado":"Guardar evaluacion"}</Btn>}
+      {data.date&&<div style={{fontSize:10,color:T.ink3,marginTop:8}}>Evaluado el {data.date}</div>}
+    </div>
+  );
+}
+
+function CrossEval({uid,initial,onSave,readOnly}){
+  const [data,setData]=useState(initial||{});
+  const [saved,setSaved]=useState(false);
+  const upd=(id,v)=>{if(readOnly)return;setData(p=>({...p,[id]:{...(p[id]||{}),...v}}));};
+  const save=async()=>{await onSave({...data,date:new Date().toLocaleDateString("es-CL")});setSaved(true);setTimeout(()=>setSaved(false),2000);};
+  return (
+    <div className="fu">
+      <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:18,color:T.ink,marginBottom:4}}>Evaluacion Cruzada entre Secciones</div>
+      <div style={{fontSize:11,color:T.ink3,marginBottom:14}}>Presentacion de 5 minutos. Niveles: Inicial / En desarrollo / Logrado / Destacado.</div>
+      <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:12}}>
+        {CROSS_CRIT.map(c=>{
+          const d=data[c.id]||{};
+          return (
+            <div key={c.id} style={{border:"1px solid "+T.rule,borderRadius:2}}>
+              <div style={{padding:"8px 12px",background:T.bg,fontSize:12,fontWeight:500,color:T.ink}}>{c.t}</div>
+              <div style={{padding:"8px 12px",display:"flex",gap:6,flexWrap:"wrap",borderTop:"1px solid "+T.rule}}>
+                {CROSS_LVL.map(lv=>{
+                  const clrs={Inicial:{c:T.red,bg:T.redBg},["En desarrollo"]:{c:T.amber,bg:T.amberBg},Logrado:{c:T.blue,bg:T.blueBg},Destacado:{c:T.green,bg:T.greenBg}};
+                  const cfg=clrs[lv]||{c:T.ink3,bg:T.bg};
+                  return <button key={lv} onClick={()=>upd(c.id,{level:d.level===lv?"":lv})} style={{padding:"4px 12px",fontSize:11,fontWeight:d.level===lv?700:400,background:d.level===lv?cfg.bg:"transparent",color:d.level===lv?cfg.c:T.ink3,border:"1px solid "+(d.level===lv?cfg.c:T.rule),cursor:readOnly?"default":"pointer",borderRadius:2}}>{lv}</button>;
+                })}
+              </div>
+              {!readOnly&&<div style={{padding:"0 12px 10px"}}><Txa value={d.comment||""} onChange={e=>upd(c.id,{comment:e.target.value})} rows={2} placeholder="Comentarios..." s={{fontSize:12}}/></div>}
+              {readOnly&&d.comment&&<div style={{padding:"4px 12px 10px",fontSize:12,color:T.ink2,fontStyle:"italic"}}>{d.comment}</div>}
+            </div>
+          );
+        })}
+      </div>
+      {!readOnly&&(
+        <>
+          <Lbl c="Comentario general" s={{marginBottom:6}}/>
+          <Txa value={data.generalComment||""} onChange={e=>setData(p=>({...p,generalComment:e.target.value}))} rows={3} placeholder="Retroalimentacion general de la presentacion..." s={{marginBottom:12}}/>
+          <Btn v="primary" sz="md" onClick={save}>{saved?"Guardado":"Guardar evaluacion"}</Btn>
+        </>
+      )}
+      {readOnly&&data.generalComment&&<div style={{padding:"10px 14px",background:T.greenBg,border:"1px solid "+T.green,fontSize:12,color:T.ink,marginTop:8}}><b>Comentario general:</b> {data.generalComment}</div>}
+      {data.date&&<div style={{fontSize:10,color:T.ink3,marginTop:8}}>Evaluado el {data.date}</div>}
+    </div>
+  );
+}
+
+
+function FileViewer({file,onClose}){
+  if(!file)return null;
+  const [blobUrl,setBlobUrl]=React.useState(null);
+  const isImg=(file.type&&file.type.startsWith("image/"))||/\.(jpg|jpeg|png|gif|webp)$/i.test(file.name||"");
+  const isPdf=(file.type==="application/pdf")||/\.pdf$/i.test(file.name||"");
+  const isWord=/\.(doc|docx)$/i.test(file.name||"");
+  // Convert base64 data URI to blob URL for reliable iframe rendering
+  React.useEffect(()=>{
+    if(!file.data)return;
+    try{
+      const arr=file.data.split(",");
+      const mime=arr[0].match(/:(.*?);/)[1];
+      const bstr=atob(arr[1]);
+      const u8=new Uint8Array(bstr.length);
+      for(let i=0;i<bstr.length;i++)u8[i]=bstr.charCodeAt(i);
+      const blob=new Blob([u8],{type:mime});
+      const url=URL.createObjectURL(blob);
+      setBlobUrl(url);
+      return()=>URL.revokeObjectURL(url);
+    }catch(e){setBlobUrl(null);}
+  },[file.data]);
+  const src=file.url||blobUrl||file.data||"";
+  const dl=()=>{
+    const a=document.createElement("a");
+    a.href=file.url||file.data||"";
+    a.download=file.name||"archivo";
+    a.click();
+  };
+  const ftLabel=isImg?"IMG":isPdf?"PDF":"DOC";
+  const ftBg=isImg?T.greenBg:isPdf?T.redBg:T.blueBg;
+  const ftC=isImg?T.green:isPdf?T.red:T.blue;
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.8)",zIndex:9999,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:12}} onClick={onClose}>
+      <div style={{background:T.surface,width:"97%",maxWidth:980,maxHeight:"95vh",display:"flex",flexDirection:"column",boxShadow:"0 24px 80px rgba(0,0,0,0.5)"}} onClick={e=>e.stopPropagation()}>
+        <div style={{padding:"10px 14px",borderBottom:"1px solid "+T.rule,display:"flex",alignItems:"center",gap:8,flexShrink:0,background:T.bg}}>
+          <div style={{fontSize:10,padding:"2px 7px",fontWeight:700,background:ftBg,color:ftC,flexShrink:0}}>{ftLabel}</div>
+          <span style={{flex:1,fontSize:13,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{file.name}</span>
+          <span style={{fontSize:10,color:T.ink3,flexShrink:0}}>{file.size}</span>
+          <Btn v="ghost" sz="sm" onClick={dl}>Descargar</Btn>
+          <button onClick={onClose} style={{background:T.ink,border:"none",padding:"6px 14px",cursor:"pointer",fontSize:12,color:"#fff",fontFamily:"'Outfit',sans-serif",flexShrink:0}}>Cerrar</button>
+        </div>
+        <div style={{flex:1,overflow:"auto",background:"#e8e8e8",display:"flex",alignItems:"flex-start",justifyContent:"center",minHeight:200}}>
+          {isImg&&src&&<img src={src} alt={file.name} style={{maxWidth:"100%",maxHeight:"85vh",display:"block",objectFit:"contain",margin:"auto",padding:8}}/>}
+          {isPdf&&src&&<iframe src={src} width="100%" style={{height:"82vh",minHeight:400,border:"none",display:"block"}} title={file.name}/>}
+          {isWord&&src&&<iframe src={"https://docs.google.com/gview?url="+encodeURIComponent(src)+"&embedded=true"} width="100%" style={{height:"82vh",minHeight:400,border:"none",display:"block"}} title={file.name}/>}
+          {!isImg&&!isPdf&&!isWord&&(
+            <div style={{padding:60,textAlign:"center",background:T.surface,margin:"auto",width:"100%"}}>
+              <div style={{fontSize:13,color:T.ink2,marginBottom:20}}>Vista previa no disponible para este formato.</div>
+              <Btn v="primary" sz="lg" onClick={dl}>Descargar {file.name}</Btn>
+            </div>
+          )}
+          {(isPdf||isWord)&&!src&&(
+            <div style={{padding:40,textAlign:"center",margin:"auto"}}>
+              <div style={{fontSize:12,color:T.ink3,marginBottom:12}}>Cargando vista previa...</div>
+              <Btn v="ghost" sz="sm" onClick={dl}>Descargar mientras tanto</Btn>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FileUpload({files,onAdd,onRemove,canEdit=true,folder="uploads"}){
+  const inp=useRef(null);
+  const [viewing,setViewing]=useState(null);
+  const [uploading,setUploading]=useState(false);
+  const [progress,setProgress]=useState(0);
+  const handle=async(e)=>{
+    const file=e.target.files[0];if(!file)return;
+    if(file.size>5*1024*1024){alert("Archivo demasiado grande. Maximo 5MB.");return;}
+    e.target.value="";
+    setUploading(true);setProgress(10);
+    try{
+      const reader=new FileReader();
+      await new Promise((res,rej)=>{
+        reader.onload=ev=>{
+          setProgress(80);
+          const entry={id:Date.now()+"",name:file.name,type:file.type,size:Math.round(file.size/1024)+"KB",data:ev.target.result,date:new Date().toLocaleDateString("es-CL")};
+          onAdd(entry);setProgress(100);res();
+        };
+        reader.onerror=rej;
+        reader.readAsDataURL(file);
+      });
+    }catch(err){alert("Error al cargar el archivo: "+err.message);}
+    setUploading(false);setProgress(0);
+  };
+  const getFileType=(f)=>{
+    if((f.type&&f.type.startsWith("image/"))||/\.(jpg|jpeg|png|gif)$/i.test(f.name||""))return"IMG";
+    if((f.type==="application/pdf")||/\.pdf$/i.test(f.name||""))return"PDF";
+    return"DOC";
+  };
+  return (
+    <div>
+      <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:canEdit?8:0}}>
+        {(files||[]).length===0&&!uploading&&<div style={{fontSize:12,color:T.ink3,fontStyle:"italic",padding:"6px 0"}}>Sin archivos adjuntos.</div>}
+        {(files||[]).map(f=>{
+          const ft=getFileType(f);
+          const bgc=ft==="IMG"?T.greenBg:ft==="PDF"?T.redBg:T.blueBg;
+          const tc=ft==="IMG"?T.green:ft==="PDF"?T.red:T.blue;
+          return(
+            <div key={f.id} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",background:T.surface,border:"1px solid "+T.rule}}>
+              <div style={{fontSize:10,padding:"2px 7px",background:bgc,color:tc,fontWeight:700,flexShrink:0}}>{ft}</div>
+              <span style={{flex:1,fontSize:12,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.name}</span>
+              <span style={{fontSize:10,color:T.ink3,flexShrink:0}}>{f.size}</span>
+              <Btn v="link" sz="sm" onClick={()=>setViewing(f)}>Ver</Btn>
+              <Btn v="link" sz="sm" onClick={()=>{const a=document.createElement("a");a.href=f.url||f.data;a.target="_blank";a.download=f.name;a.click();}}>Bajar</Btn>
+              {canEdit&&onRemove&&<Btn v="danger" sz="sm" onClick={()=>onRemove(f.id)}>X</Btn>}
+            </div>
+          );
+        })}
+        {uploading&&(
+          <div style={{padding:"10px 14px",background:T.blueBg,border:"1px solid "+T.blue}}>
+            <div style={{fontSize:12,color:T.blue,marginBottom:6}}>Subiendo archivo... {progress}%</div>
+            <div style={{height:4,background:T.rule,borderRadius:2}}><div style={{height:4,background:T.blue,borderRadius:2,width:progress+"%",transition:"width 0.2s"}}/></div>
+          </div>
+        )}
+      </div>
+      {canEdit&&!uploading&&(
+        <>
+          <input type="file" ref={inp} onChange={handle} style={{display:"none"}} accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.gif,.txt,.ppt,.pptx,.xls,.xlsx"/>
+          <Btn v="ghost" sz="sm" onClick={()=>inp.current&&inp.current.click()}>+ Adjuntar archivo (max 10MB)</Btn>
+          <div style={{fontSize:10,color:T.ink3,marginTop:4}}>PDF, Word, imagenes. Max 5MB. Archivos guardados localmente.</div>
+        </>
+      )}
+      <FileViewer file={viewing} onClose={()=>setViewing(null)}/>
+    </div>
+  );
+}
+function AuthPage({onLogin}){
+  const [mode,setMode]=useState("login");
+  const [email,setEmail]=useState("");const [pw,setPw]=useState("");const [name,setName]=useState("");const [pw2,setPw2]=useState("");const [role,setRole]=useState("student");const [step,setStep]=useState(1);const [err,setErr]=useState("");const [busy,setBusy]=useState(false);const [demo,setDemo]=useState(false);const [regOk,setRegOk]=useState("");
+
+  const reset=()=>{setEmail("");setPw("");setName("");setPw2("");setErr("");setStep(1);setRegOk("");};
+  const switchMode=m=>{setMode(m);reset();};
+
+  const loginNext=async()=>{
+    if(!email.trim()){setErr("Ingresa tu correo");return;}
+    const users=await DB.getUsers();
+    if(!users.find(u=>u.email.toLowerCase()===email.trim().toLowerCase())){setErr("Correo no registrado. Crea una cuenta primero.");return;}
+    setErr("");setStep(2);
+  };
+  const loginDo=async()=>{
+    if(!pw){setErr("Ingresa tu contrasena");return;}setBusy(true);
+    const[auth,users]=await Promise.all([DB.getAuth(),DB.getUsers()]);
+    const key=Object.keys(auth).find(k=>k.toLowerCase()===email.trim().toLowerCase());
+    const user=users.find(u=>u.email.toLowerCase()===email.trim().toLowerCase());
+    if(!key||auth[key].pw!==pw){setErr("Contrasena incorrecta");setBusy(false);return;}
+    if(auth[key].mustChange){onLogin(user,true);return;}
+    onLogin(user,false);
+  };
+
+  const registerDo=async()=>{
+    setErr("");
+    if(!name.trim()){setErr("Ingresa tu nombre completo");return;}
+    if(!email.trim()||!email.includes("@")){setErr("Correo invalido");return;}
+    if(pw.length<6){setErr("Contrasena minimo 6 caracteres");return;}
+    if(pw!==pw2){setErr("Las contrasenas no coinciden");return;}
+    setBusy(true);
+    const el=email.trim().toLowerCase();
+    const[users,auth,invites]=await Promise.all([DB.getUsers(),DB.getAuth(),DB.getInvites()]);
+    if(users.find(u=>u.email.toLowerCase()===el)){setErr("Este correo ya esta registrado.");setBusy(false);return;}
+    const invite=invites.find(i=>i.email.toLowerCase()===el);
+    const forceRole=invite?"student":role;
+    const av=(name.trim().split(" ").map(w=>w[0]||"").join("").slice(0,2)||"US").toUpperCase();
+    const id=(forceRole==="professor"?"prof_":"stu_")+Date.now();
+    const sectionId=invite?invite.sectionId:null;
+    const newUser={id,name:name.trim(),email:el,role:forceRole,av,sectionId};
+    await DB.setUsers([...users,newUser]);
+    auth[el]={pw,mustChange:false};await DB.setAuth(auth);
+    if(forceRole==="student"){await DB.setStages(id,mkStages());}
+    if(invite){const upd=invites.filter(i=>i.email.toLowerCase()!==el);await DB.setInvites(upd);}
+    setBusy(false);
+    const msg=invite?"Cuenta creada. Asignado/a a la seccion de tu profesor.":"Cuenta creada. Iniciando sesion...";
+    setRegOk(msg);
+    setTimeout(()=>onLogin(newUser,false),1200);
+  };
+
+  const DEMOS=[{label:"PROFESOR DEMO",email:"demo.profesor@seminariodiseno.cl",pw:"Demo2026"},{label:"ESTUDIANTE DEMO",email:"demo.estudiante@seminariodiseno.cl",pw:"Demo2026"}];
+
+  return (
+    <div style={{minHeight:"100vh",background:T.bg,display:"flex",flexDirection:"column"}} className="fu">
+      <GS/>
+      <div style={{background:T.ink,padding:"12px 24px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
+        <div><span style={{fontFamily:"'Cormorant Garamond',serif",fontSize:17,color:T.sidebarT}}>Seminario de Titulo</span><span style={{fontSize:10,color:T.sidebarM,marginLeft:10,letterSpacing:"0.08em"}}>DISENO UC</span></div>
+        <button onClick={()=>setDemo(v=>!v)} style={{background:"none",border:"1px solid #3a3830",color:T.sidebarM,fontSize:11,padding:"4px 11px",cursor:"pointer"}}>{demo?"Ocultar demo":"Cuentas demo"}</button>
+      </div>
+      {demo&&(
+        <div style={{background:"#152B45",borderBottom:"1px solid #1E3F62",padding:"14px 24px"}}>
+          <div style={{maxWidth:720,margin:"0 auto"}}>
+            <div style={{fontSize:9,color:"#6EB4F5",fontWeight:700,letterSpacing:"0.1em",marginBottom:10}}>CUENTAS DE DEMOSTRACION</div>
+            <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
+              {DEMOS.map(d=>(
+                <div key={d.email} style={{background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",padding:"10px 14px",minWidth:250}}>
+                  <div style={{fontSize:9,color:"#6EB4F5",fontWeight:700,letterSpacing:"0.1em",marginBottom:4}}>{d.label}</div>
+                  <div style={{fontSize:12,color:"#fff",fontFamily:"monospace"}}>{d.email}</div>
+                  <div style={{fontSize:12,color:"#fff",fontFamily:"monospace",marginBottom:8}}>{d.pw}</div>
+                  <Btn v="accent" sz="sm" onClick={()=>{setEmail(d.email);setPw(d.pw);setMode("login");setStep(2);setDemo(false);}}>Ingresar -{">"}</Btn>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+      <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:"24px 16px"}}>
+        <div style={{width:"100%",maxWidth:420}}>
+          <div style={{background:T.surface,border:"1px solid "+T.rule,padding:"28px 22px",marginBottom:14}}>
+            {mode==="login"&&(
+              <>
+                <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:26,marginBottom:4}}>{step===1?"Bienvenido/a":"Ingresa tu contrasena"}</div>
+                <div style={{fontSize:12,color:T.ink3,marginBottom:20}}>Seminario Titulo 2026</div>
+                {step===1?(
+                  <>
+                    <Lbl c="Correo electronico" s={{marginBottom:5}}/>
+                    <Inp value={email} onChange={e=>{setEmail(e.target.value);setErr("");}} onKeyDown={e=>e.key==="Enter"&&loginNext()} placeholder="nombre@universidad.cl" s={{marginBottom:err?8:16}} autoFocus/>
+                    {err&&<div style={{fontSize:11,color:T.red,marginBottom:12,padding:"7px 10px",background:T.redBg}}>{err}</div>}
+                    <Btn v="primary" sz="lg" onClick={loginNext} s={{width:"100%",justifyContent:"center",marginBottom:14}}>Continuar</Btn>
+                  </>
+                ):(
+                  <>
+                    <div style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",background:T.bg,border:"1px solid "+T.rule,marginBottom:14,borderRadius:2}}><Av t={email[0]||"?"} sz={22}/><span style={{fontSize:12,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{email}</span><Btn v="link" sz="sm" onClick={()=>{setStep(1);setPw("");setErr("");}}>Cambiar</Btn></div>
+                    <Lbl c="Contrasena" s={{marginBottom:5}}/>
+                    <Inp type="password" value={pw} onChange={e=>{setPw(e.target.value);setErr("");}} onKeyDown={e=>e.key==="Enter"&&loginDo()} placeholder="..." s={{marginBottom:err?8:16}} autoFocus/>
+                    {err&&<div style={{fontSize:11,color:T.red,marginBottom:12,padding:"7px 10px",background:T.redBg}}>{err}</div>}
+                    <Btn v="primary" sz="lg" onClick={loginDo} dis={busy} s={{width:"100%",justifyContent:"center"}}>{busy?<><Sp/>&nbsp;Verificando...</>:"Iniciar sesion"}</Btn>
+                  </>
+                )}
+              </>
+            )}
+            {mode==="register"&&(
+              <>
+                <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:26,marginBottom:4}}>Crear cuenta</div>
+                <div style={{fontSize:12,color:T.ink3,marginBottom:20}}>Registro en Seminario Titulo 2026</div>
+                {regOk?(
+                  <div style={{padding:"16px",background:T.greenBg,border:"1px solid "+T.green,textAlign:"center"}}>
+                    <div style={{fontSize:14,color:T.green,fontWeight:600,marginBottom:4}}>Cuenta creada</div>
+                    <div style={{fontSize:12,color:T.ink}}>{regOk}</div>
+                    <div style={{fontSize:11,color:T.ink3,marginTop:6}}>Redirigiendo...</div>
+                  </div>
+                ):(
+                  <>
+                    <Lbl c="Nombre completo" s={{marginBottom:5}}/>
+                    <Inp value={name} onChange={e=>{setName(e.target.value);setErr("");}} placeholder="Nombre Apellido" s={{marginBottom:12}} autoFocus/>
+                    <Lbl c="Correo electronico" s={{marginBottom:5}}/>
+                    <Inp value={email} onChange={e=>{setEmail(e.target.value);setErr("");}} placeholder="nombre@universidad.cl" s={{marginBottom:12}}/>
+                    <Lbl c="Soy" s={{marginBottom:5}}/>
+                    <div style={{display:"flex",gap:8,marginBottom:12}}>
+                      {[["student","Estudiante"],["professor","Profesor/a"]].map(([k,l])=>(
+                        <button key={k} onClick={()=>setRole(k)} style={{flex:1,padding:"9px",fontSize:12,fontWeight:role===k?700:400,background:role===k?T.ink:T.bg,color:role===k?"#fff":T.ink2,border:"1px solid "+(role===k?T.ink:T.rule),cursor:"pointer",transition:"all 0.15s"}}>{l}</button>
+                      ))}
+                    </div>
+                    {role==="student"&&<div style={{fontSize:11,color:T.ink3,padding:"8px 10px",background:T.bg,border:"1px solid "+T.rule,marginBottom:12}}>Si tu profesor registro tu correo, quedas asignado/a automaticamente a su seccion.</div>}
+                    <Lbl c="Contrasena" s={{marginBottom:5}}/>
+                    <Inp type="password" value={pw} onChange={e=>{setPw(e.target.value);setErr("");}} placeholder="Minimo 6 caracteres" s={{marginBottom:12}}/>
+                    <Lbl c="Confirmar contrasena" s={{marginBottom:5}}/>
+                    <Inp type="password" value={pw2} onChange={e=>{setPw2(e.target.value);setErr("");}} onKeyDown={e=>e.key==="Enter"&&registerDo()} placeholder="Repite la contrasena" s={{marginBottom:err?8:16}}/>
+                    {err&&<div style={{fontSize:11,color:T.red,marginBottom:12,padding:"7px 10px",background:T.redBg}}>{err}</div>}
+                    <Btn v="primary" sz="lg" onClick={registerDo} dis={busy} s={{width:"100%",justifyContent:"center",marginBottom:14}}>{busy?<><Sp/>&nbsp;Creando cuenta...</>:"Crear cuenta"}</Btn>
+                  </>
+                )}
+              </>
+            )}
+          </div>
+          <div style={{padding:"10px 14px",background:T.bg,border:"1px solid "+T.rule,fontSize:11,color:T.ink3}}>
+            {mode==="login"?<>No tienes cuenta? <button onClick={()=>switchMode("register")} style={{background:"none",border:"none",color:T.accent,cursor:"pointer",fontSize:11,fontWeight:600,padding:0}}>Crear cuenta</button></>:<>Ya tienes cuenta? <button onClick={()=>switchMode("login")} style={{background:"none",border:"none",color:T.accent,cursor:"pointer",fontSize:11,fontWeight:600,padding:0}}>Iniciar sesion</button></>}
+            <span style={{margin:"0 8px",color:T.rule}}>|</span><span style={{cursor:"pointer",color:T.accent}} onClick={()=>setDemo(true)}>Cuentas demo</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ChangePw({user,onDone,forced=false}){
+  const [cur,setCur]=useState("");const [nw,setNw]=useState("");const [nw2,setNw2]=useState("");const [err,setErr]=useState("");const [ok,setOk]=useState(false);
+  const save=async()=>{if(!forced&&!cur){setErr("Ingresa tu contrasena actual");return;}if(nw.length<6){setErr("Minimo 6 caracteres");return;}if(nw!==nw2){setErr("Las contrasenas no coinciden");return;}const auth=await DB.getAuth();const key=Object.keys(auth).find(k=>k.toLowerCase()===user.email.toLowerCase());if(!key)return;if(!forced&&auth[key].pw!==cur){setErr("Contrasena actual incorrecta");return;}auth[key]={pw:nw,mustChange:false};await DB.setAuth(auth);setOk(true);setTimeout(onDone,800);};
+  if(ok)return <div style={{padding:24,color:T.green,textAlign:"center"}}>Contrasena actualizada</div>;
+  return (
+    <div style={{padding:"24px",maxWidth:360}}>
+      <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:22,marginBottom:6}}>{forced?"Crear contrasena":"Cambiar contrasena"}</div>
+      <div style={{fontSize:12,color:T.ink3,marginBottom:18}}>{forced?"Primer ingreso. Define tu contrasena.":""}</div>
+      {!forced&&<><Lbl c="Contrasena actual" s={{marginBottom:5}}/><Inp type="password" value={cur} onChange={e=>{setCur(e.target.value);setErr("");}} s={{marginBottom:12}} placeholder="..."/></>}
+      <Lbl c="Nueva contrasena" s={{marginBottom:5}}/><Inp type="password" value={nw} onChange={e=>{setNw(e.target.value);setErr("");}} s={{marginBottom:12}} placeholder="Minimo 6 caracteres"/>
+      <Lbl c="Confirmar" s={{marginBottom:5}}/><Inp type="password" value={nw2} onChange={e=>{setNw2(e.target.value);setErr("");}} s={{marginBottom:err?10:16}} placeholder="Repite la contrasena"/>
+      {err&&<div style={{fontSize:11,color:T.red,marginBottom:12,padding:"7px 10px",background:T.redBg}}>{err}</div>}
+      <Btn v="primary" sz="lg" onClick={save} s={{width:"100%",justifyContent:"center"}}>{forced?"Crear y entrar":"Guardar"}</Btn>
+    </div>
+  );
+}
+
+const AISYS=`Eres el Asistente de Seminario de Titulo de la Escuela de Diseno UC (Pontificia Universidad Catolica de Chile). Apoyas a estudiantes y profesores en el proceso de titulacion 2026.
+
+CONTEXTO DEL SEMINARIO:
+- El seminario tiene 6 etapas: Oportunidad, Referencias, Formulacion, Contexto, Metodologia, Comunicacion
+- Nota final: Nota proceso 30% + Informe 30% + Presentacion 40%
+- Minimo 4.0 para pase a Taller de Titulacion
+- Hay revision entre pares (peer review) anonima y evaluacion cruzada entre secciones
+
+ETAPAS Y SU CONTENIDO:
+1. Oportunidad: problema u oportunidad, tematicas esenciales, antecedentes y marco teorico
+2. Referencias: estado del arte, fuentes historicas y contemporaneas, referencias complementarias
+3. Formulacion: pregunta y objetivos, referentes del proyecto, justificacion y etica
+4. Contexto: unidad de analisis, levantamiento de informacion, interacciones criticas
+5. Metodologia: propuesta metodologica, indicadores IOV, propuesta formal anticipada
+6. Comunicacion: lenguaje escrito, recursos graficos, diagramacion
+
+CRITERIOS DE EVALUACION (Rubrica Nota Proceso 30%):
+- Compromiso y gestion del proceso (20%)
+- Investigacion y antecedentes (20%)
+- Delimitacion del problema y coherencia (25%)
+- Estrategia metodologica e IOV (25%)
+- Retroalimentacion y comunicacion (10%)
+
+COMPORTAMIENTO:
+- Responde SIEMPRE en espanol, con tono cercano y academico
+- Da respuestas concretas y aplicadas al contexto de diseno
+- Cuando un estudiante pregunte sobre una etapa, pregunta en que parte especifica esta trabajando
+- Si la pregunta es vaga, pide mas contexto antes de responder
+- Menciona criterios especificos de evaluacion cuando sea relevante
+- Maximo 300 palabras por respuesta, usa listas cuando ayude a la claridad
+- No inventes informacion sobre el programa o los docentes
+- Sugiere siempre validar con el profesor guia las decisiones importantes'Eres el Asistente de Seminario de Titulo de la Escuela de Diseno UC (Pontificia Universidad Catolica de Chile). Apoyas a estudiantes y profesores en el proceso de titulacion 2026.
+
+CONTEXTO DEL SEMINARIO:
+- El seminario tiene 6 etapas: Oportunidad, Referencias, Formulacion, Contexto, Metodologia, Comunicacion
+- Nota final: Nota proceso 30% + Informe 30% + Presentacion 40%
+- Minimo 4.0 para pase a Taller de Titulacion
+- Hay revision entre pares (peer review) anonima y evaluacion cruzada entre secciones
+
+ETAPAS Y SU CONTENIDO:
+1. Oportunidad: problema u oportunidad, tematicas esenciales, antecedentes y marco teorico
+2. Referencias: estado del arte, fuentes historicas y contemporaneas, referencias complementarias
+3. Formulacion: pregunta y objetivos, referentes del proyecto, justificacion y etica
+4. Contexto: unidad de analisis, levantamiento de informacion, interacciones criticas
+5. Metodologia: propuesta metodologica, indicadores IOV, propuesta formal anticipada
+6. Comunicacion: lenguaje escrito, recursos graficos, diagramacion
+
+CRITERIOS DE EVALUACION (Rubrica Nota Proceso 30%):
+- Compromiso y gestion del proceso (20%)
+- Investigacion y antecedentes (20%)
+- Delimitacion del problema y coherencia (25%)
+- Estrategia metodologica e IOV (25%)
+- Retroalimentacion y comunicacion (10%)
+
+COMPORTAMIENTO:
+- Responde SIEMPRE en espanol, con tono cercano y academico
+- Da respuestas concretas y aplicadas al contexto de diseno
+- Cuando un estudiante pregunte sobre una etapa, pregunta en que parte especifica esta trabajando
+- Si la pregunta es vaga, pide mas contexto antes de responder
+- Menciona criterios especificos de evaluacion cuando sea relevante
+- Maximo 300 palabras por respuesta, usa listas cuando ayude a la claridad
+- No inventes informacion sobre el programa o los docentes
+- Sugiere siempre validar con el profesor guia las decisiones importantes
+`;
+const DB={
+  async init(){
+    // v8: migrate from v7 without losing existing data
+    if(await S.get("init:v8"))return;
+    const hadV7=await S.get("init:v7");
+    if(hadV7){await S.set("init:v8",true);return;}
+    // Fresh install: seed demo data
+    const users=IUSERS_DEMO.map(({pw:_,mc:__,...u})=>u);
+    await S.set("users:all",users);
+    const auth={};IUSERS_DEMO.forEach(u=>{auth[u.email]={pw:u.pw,mustChange:u.mc};});
+    await S.set("auth:all",auth);
+    await S.set("sections:all",ISECS_DEMO);
+    await S.set("gantt:"+DS,IGANG);
+    await S.set("stages:"+DST,mkStages());
+    await S.set("invites:all",[]);
+    await S.set("init:v8",true);
+  },
+  async getUsers(){return(await S.fresh("users:all"))||[];},
+  async setUsers(d){await S.set("users:all",d);},
+  async getAuth(){return(await S.fresh("auth:all"))||{};},
+  async setAuth(d){await S.set("auth:all",d);},
+  async getSections(){return(await S.fresh("sections:all"))||[];},
+  async setSections(d){await S.set("sections:all",d);},
+  async getGantt(sid){return(await S.get("gantt:"+sid))||IGANG;},
+  async setGantt(sid,d){await S.set("gantt:"+sid,d);},
+  async getStages(uid){return(await S.get("stages:"+uid))||mkStages();},
+  async setStages(uid,d){await S.set("stages:"+uid,d);},
+  async getRes(sid){return(await S.get("res:"+sid))||[];},
+  async setRes(sid,d){await S.set("res:"+sid,d);},
+  async getRubric(uid){return(await S.get("rubric:"+uid))||{};},
+  async setRubric(uid,d){await S.set("rubric:"+uid,d);},
+  async getCrossEval(uid){return(await S.get("crosseval:"+uid))||{};},
+  async setCrossEval(uid,d){await S.set("crosseval:"+uid,d);},
+  async getInvites(){return(await S.fresh("invites:all"))||[];},
+  async setInvites(d){await S.set("invites:all",d);},
+  async findInvite(email){const inv=await this.getInvites();return inv.find(i=>i.email.toLowerCase()===email.toLowerCase())||null;},
+  async getApiKey(sectionId){return(await S.fresh("apikey:"+(sectionId||"global")))||null;},
+  async setApiKey(sectionId,key){await S.set("apikey:"+(sectionId||"global"),key);},
+};
+
+const GS=()=>(
+  <style>{`@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=Outfit:wght@300;400;500;600&display=swap');*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}html,body{height:100%;background:#F4F2ED;font-family:'Outfit',sans-serif;color:#13120F;-webkit-font-smoothing:antialiased}input,textarea,select,button{font-family:'Outfit',sans-serif}::-webkit-scrollbar{width:4px;height:4px}::-webkit-scrollbar-thumb{background:#DDD8CE}::placeholder{color:#9E9488}textarea:focus,input:focus,select:focus{outline:1.5px solid #D94E1A;outline-offset:0}@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}.fu{animation:fadeUp 0.25s ease forwards}@keyframes spin{to{transform:rotate(360deg)}}.spin{animation:spin 0.9s linear infinite}@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}.pulse{animation:pulse 1.5s ease infinite}@media(max-width:640px){.mob-hide{display:none!important}.mob-stack{flex-direction:column!important}.mob-full{width:100%!important;max-width:unset!important}.mob-p{padding:10px 14px!important}}input,textarea,select{-webkit-appearance:none}textarea{font-size:15px!important}input{font-size:15px!important}`}</style>
+);
+const Sp=()=><div className="spin" style={{width:16,height:16,border:"2px solid "+T.rule,borderTopColor:T.accent,borderRadius:"50%",display:"inline-block"}}/>;
+const Av=({t="?",sz=32})=>{const bg=[T.accent,T.green,T.blue,T.violet,T.amber,T.red][(t||"A").charCodeAt(0)%6];return <div style={{width:sz,height:sz,background:bg,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:sz*0.33,fontWeight:700,flexShrink:0,borderRadius:2}}>{(t||"?").slice(0,2)}</div>;};
+const Lbl=({c,s})=><div style={{fontSize:9,fontWeight:700,letterSpacing:"0.12em",textTransform:"uppercase",color:T.ink3,...s}}>{c}</div>;
+const Btn=({children,onClick,v="ghost",sz="md",dis,s,...r})=>{
+  const sz2={sm:{fontSize:11,padding:"7px 12px"},md:{fontSize:12,padding:"8px 15px"},lg:{fontSize:13,padding:"11px 22px"}};
+  const vs={primary:{background:T.ink,color:T.sidebarT,border:"none",opacity:dis?0.4:1},accent:{background:T.accent,color:"#fff",border:"none",opacity:dis?0.4:1},ghost:{background:"transparent",color:T.ink2,border:"1px solid "+T.rule},link:{background:"transparent",color:T.accent,border:"none",padding:0},danger:{background:T.redBg,color:T.red,border:"1px solid #F8CECE"},success:{background:T.greenBg,color:T.green,border:"1px solid "+T.green}};
+  return <button onClick={onClick} disabled={dis} style={{display:"inline-flex",alignItems:"center",gap:6,cursor:dis?"not-allowed":"pointer",fontFamily:"'Outfit',sans-serif",fontWeight:500,lineHeight:1,transition:"all 0.15s",...sz2[sz],...vs[v],...s}} {...r}>{children}</button>;
+};
+const Inp=({s,...p})=><input style={{width:"100%",border:"1px solid "+T.rule,padding:"9px 12px",fontSize:13,background:T.surface,color:T.ink,...s}} {...p}/>;
+const Sel=({s,children,...p})=><select style={{border:"1px solid "+T.rule,padding:"8px 10px",fontSize:12,background:T.surface,color:T.ink,...s}} {...p}>{children}</select>;
+const Txa=({s,...p})=><textarea style={{width:"100%",border:"1px solid "+T.rule,padding:"10px 12px",fontSize:13,background:T.surface,color:T.ink,resize:"vertical",lineHeight:1.6,...s}} {...p}/>;
+const Pill=({st})=>{const c=SCFG[st]||SCFG.BORRADOR;return <span style={{fontSize:9,fontWeight:700,padding:"2px 7px",background:c.bg,color:c.c,letterSpacing:"0.05em",whiteSpace:"nowrap",borderRadius:2}}>{c.l}</span>;};
+const Card=({children,s})=><div style={{background:T.surface,border:"1px solid "+T.rule,padding:"16px",...s}}>{children}</div>;
+
+function Timeline(){
+  const hitos=[
+    {date:"Marzo 2026",title:"Inicio proceso",sub:"Docencia Tutorial",clr:T.blue,ev:""},
+    {date:"2a sem. Abril\n6-10 Abr",title:"Eval. Cruzada",sub:"Formativa",clr:T.violet,ev:"Formativa"},
+    {date:"26 Jun 2026",title:"Nota Proceso",sub:"Profesor guia (30%)",clr:T.amber,ev:"30%"},
+    {date:"6 Jul 2026",title:"Informe",sub:"Otro profesor (30%)",clr:T.accent,ev:"30%"},
+    {date:"13-17 Jul 2026",title:"Presentacion",sub:"2 profes otras secciones",clr:T.green,ev:"40%"},
+  ];
+  return (
+    <div style={{background:T.surface,border:"1px solid "+T.rule,padding:"20px 24px",marginBottom:18}}>
+      <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:18,color:T.ink,marginBottom:4}}>Modelo Titulacion 2026 - Proceso, Hitos y Evaluaciones</div>
+      <div style={{fontSize:11,color:T.ink3,marginBottom:20}}>Nota final: Nota proceso 30% + Informe 30% + Presentacion 40% = 100%. Minimo 4.0 para pase a Taller de Titulacion.</div>
+      <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
+        <div style={{position:"relative",minWidth:680,padding:"30px 0 10px"}}>
+          <div style={{position:"absolute",top:44,left:40,right:40,height:2,background:T.rule}}/>
+          <div style={{display:"flex",justifyContent:"space-between",position:"relative"}}>
+            {hitos.map((h,i)=>(
+              <div key={i} style={{display:"flex",flexDirection:"column",alignItems:"center",width:"18%",position:"relative"}}>
+                <div style={{width:16,height:16,background:h.clr,borderRadius:"50%",border:"3px solid "+T.surface,zIndex:2,marginBottom:12}}/>
+                {h.ev&&<div style={{position:"absolute",top:-24,fontSize:10,fontWeight:700,color:h.clr,whiteSpace:"nowrap"}}>{h.ev}</div>}
+                <div style={{fontSize:9,color:T.ink3,textAlign:"center",whiteSpace:"pre-line",marginBottom:4}}>{h.date}</div>
+                <div style={{fontSize:11,fontWeight:700,color:T.ink,textAlign:"center",marginBottom:2}}>{h.title}</div>
+                <div style={{fontSize:10,color:T.ink2,textAlign:"center"}}>{h.sub}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EvalForm({stage,mode,data,onChange,readOnly}){
+  const crits=CRIT[stage]||[];
+  const upd=(id,patch)=>{if(readOnly)return;onChange({...data,[id]:{...(data[id]||{}),...patch}});};
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:10}}>
+      {crits.map(c=>{
+        const d=data[c.id]||{};
+        return (
+          <div key={c.id} style={{border:"1px solid "+T.rule,borderRadius:2}}>
+            <div style={{padding:"8px 12px",background:T.bg,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+              <span style={{flex:1,fontSize:12,color:T.ink}}>{c.t}</span>
+              <div style={{display:"flex",gap:4}}>
+                {Object.entries(SM).map(([k,cfg])=>(
+                  <button key={k} onClick={()=>upd(c.id,{sm:d.sm===k?"":k})} style={{padding:"3px 10px",fontSize:10,fontWeight:700,background:d.sm===k?cfg.bg:"transparent",color:d.sm===k?cfg.c:T.ink3,border:"1px solid "+(d.sm===k?cfg.c:T.rule),cursor:readOnly?"default":"pointer",borderRadius:2}}>{cfg.l}</button>
+                ))}
+              </div>
+            </div>
+            {!readOnly&&mode==="auto"&&<div style={{padding:"6px 12px 10px"}}><Txa value={d.falta||""} onChange={e=>upd(c.id,{falta:e.target.value})} rows={2} placeholder="Que me falta por saber o hacer..." s={{fontSize:12}}/></div>}
+            {readOnly&&mode==="auto"&&d.falta&&<div style={{padding:"6px 12px 10px",fontSize:12,color:T.ink2,fontStyle:"italic"}}>{d.falta}</div>}
+            {!readOnly&&mode==="peer"&&(
+              <div style={{padding:"6px 12px 10px",display:"flex",flexDirection:"column",gap:6}}>
+                <Txa value={d.logrado||""} onChange={e=>upd(c.id,{logrado:e.target.value})} rows={2} placeholder="Que esta logrado en este criterio..." s={{fontSize:12}}/>
+                <Txa value={d.sugerencia||""} onChange={e=>upd(c.id,{sugerencia:e.target.value})} rows={2} placeholder="Sugerencia para fortalecer..." s={{fontSize:12}}/>
+              </div>
+            )}
+            {readOnly&&mode==="peer"&&(d.logrado||d.sugerencia)&&(
+              <div style={{padding:"6px 12px 10px"}}>
+                {d.logrado&&<div style={{fontSize:12,color:T.green,marginBottom:4}}><b>Logrado:</b> {d.logrado}</div>}
+                {d.sugerencia&&<div style={{fontSize:12,color:T.amber}}><b>Sugerencia:</b> {d.sugerencia}</div>}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function RubricaProf({uid,initial,onSave,readOnly}){
+  const [data,setData]=useState(initial||{});
+  const [saved,setSaved]=useState(false);
+  const upd=(dim,lvl)=>{if(readOnly)return;setData(p=>({...p,[dim]:{level:lvl}}));};
+  const totalW=RUBDIMS.reduce((s,d)=>{const lv=data[d.id]&&data[d.id].level?parseFloat(data[d.id].level):null;return lv?s+(lv*d.pct/100):s;},0);
+  const nota=parseFloat(totalW.toFixed(1));
+  const save=async()=>{await onSave({...data,notaCalculada:nota,date:new Date().toLocaleDateString("es-CL")});setSaved(true);setTimeout(()=>setSaved(false),2000);};
+
+  return (
+    <div className="fu">
+      <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:18,color:T.ink,marginBottom:6}}>Rubrica - Nota de Proceso (30%)</div>
+      <div style={{fontSize:11,color:T.ink3,marginBottom:14}}>Evaluacion del profesor guia. Selecciona el nivel logrado por dimension.</div>
+      <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:14}}>
+        {RUBDIMS.map(d=>{
+          const sel=data[d.id]&&data[d.id].level;
+          const selCfg=RUB_LVL.find(l=>l.v===sel);
+          return (
+            <div key={d.id} style={{border:"1px solid "+T.rule,borderRadius:2,overflow:"hidden"}}>
+              <div style={{padding:"8px 14px",background:T.bg,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                <span style={{fontSize:10,fontWeight:700,color:T.ink3,minWidth:24}}>{d.id}</span>
+                <span style={{flex:1,fontSize:12,fontWeight:600,color:T.ink}}>{d.t}</span>
+                <span style={{fontSize:10,color:T.ink3}}>{d.pct}%</span>
+                {sel&&selCfg&&<span style={{fontSize:10,fontWeight:700,padding:"2px 8px",background:selCfg.bg,color:selCfg.c,borderRadius:2}}>{selCfg.l} ({selCfg.range})</span>}
+              </div>
+              <div style={{padding:"8px 14px",display:"flex",gap:6,flexWrap:"wrap"}}>
+                {RUB_LVL.map(lvl=>(
+                  <button key={lvl.v} onClick={()=>upd(d.id,lvl.v)} title={d.levels[lvl.v]||""} style={{padding:"4px 12px",fontSize:11,fontWeight:sel===lvl.v?700:400,background:sel===lvl.v?lvl.bg:"transparent",color:sel===lvl.v?lvl.c:T.ink3,border:"1px solid "+(sel===lvl.v?lvl.c:T.rule),cursor:readOnly?"default":"pointer",borderRadius:2}}>{lvl.l}<span style={{display:"block",fontSize:8,fontWeight:400}}>{lvl.range}</span></button>
+                ))}
+              </div>
+              {sel&&<div style={{padding:"2px 14px 8px",fontSize:11,color:T.ink2,fontStyle:"italic"}}>{RUBDIMS.find(x=>x.id===d.id).levels[sel]}</div>}
+            </div>
+          );
+        })}
+      </div>
+      <div style={{padding:"12px 16px",background:T.bg,border:"1px solid "+T.rule,marginBottom:14}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+          <span style={{fontSize:13,fontWeight:600}}>Nota calculada:</span>
+          <span style={{fontSize:24,fontFamily:"'Cormorant Garamond',serif",fontWeight:600,color:nota>=4?T.green:T.red}}>{nota>0?nota.toFixed(1):"--"}</span>
+        </div>
+        {!readOnly&&(
+          <div style={{borderTop:"1px solid "+T.rule,paddingTop:10,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+            <span style={{fontSize:11,color:T.ink3}}>Nota manual (opcional):</span>
+            <input
+              type="number" min="1" max="7" step="0.1"
+              value={data.notaManual||""}
+              onChange={e=>{const v=e.target.value;if(v===""||(!isNaN(v)&&parseFloat(v)>=1&&parseFloat(v)<=7)){setData(p=>({...p,notaManual:v}));}}}
+              placeholder="1.0 - 7.0"
+              style={{width:80,border:"1px solid "+T.rule,padding:"5px 8px",fontSize:14,fontFamily:"'Cormorant Garamond',serif",textAlign:"center",background:T.surface}}
+            />
+            {data.notaManual&&<span style={{fontSize:12,color:T.ink2}}>Nota final: <strong style={{color:parseFloat(data.notaManual)>=4?T.green:T.red}}>{parseFloat(data.notaManual).toFixed(1)}</strong></span>}
+          </div>
+        )}
+        {readOnly&&data.notaManual&&(
+          <div style={{borderTop:"1px solid "+T.rule,paddingTop:8,fontSize:12,color:T.ink2}}>
+            Nota asignada: <strong style={{color:parseFloat(data.notaManual)>=4?T.green:T.red}}>{parseFloat(data.notaManual).toFixed(1)}</strong>
+          </div>
+        )}
       </div>
       {!readOnly&&<Btn v="primary" sz="md" onClick={save} dis={!RUBDIMS.every(d=>data[d.id]&&data[d.id].level)}>{saved?"Guardado":"Guardar evaluacion"}</Btn>}
       {data.date&&<div style={{fontSize:10,color:T.ink3,marginTop:8}}>Evaluado el {data.date}</div>}
@@ -632,75 +1241,152 @@ function ChangePw({user,onDone,forced=false}){
 }
 
 const AISYS="Eres un asistente del Seminario de Titulo de la Escuela de Diseno UC. Apoyas en las 6 etapas: Oportunidad, Referencias, Formulacion, Contexto, Metodologia, Comunicacion. Nota proceso 30% (D1 Compromiso 20%, D2 Investigacion 20%, D3 Delimitacion 25%, D4 Metodologia 25%, D5 Retroalimentacion 10%). Responde en espanol. Tono cercano y academico. Retroalimentacion concreta: que esta bien, que falta, siguiente paso.";
-function AiAssistant({user}){
-  const hi="Hola "+user.name.split(" ")[0]+" - Soy tu asistente del Seminario. Puedo ayudarte con tus etapas, criterios de evaluacion, metodologia o retroalimentacion. En que estas trabajando?";
-  const [msgs,setMsgs]=useState([{role:"assistant",content:hi}]);const [inp,setInp]=useState("");const [busy,setBusy]=useState(false);const [errt,setErrt]=useState("");const bot=useRef(null);
+function AiAssistant({user,section}){
+  const keyStorageKey="ai_key_"+user.id;
+  const [apiKey,setApiKey]=useState(()=>localStorage.getItem(keyStorageKey)||"");
+  const [showKeyPanel,setShowKeyPanel]=useState(!localStorage.getItem(keyStorageKey));
+  const [keyInput,setKeyInput]=useState(()=>localStorage.getItem(keyStorageKey)||"");
+  const [keyStatus,setKeyStatus]=useState("");
+
+  const hi="Hola "+user.name.split(" ")[0]+" - Soy el asistente del Seminario de Titulo. Puedo ayudarte con metodologia, criterios de evaluacion, formulacion de proyectos y retroalimentacion. En que trabajas hoy?";
+  const [msgs,setMsgs]=useState([{role:"assistant",content:hi}]);
+  const [inp,setInp]=useState("");
+  const [busy,setBusy]=useState(false);
+  const [errt,setErrt]=useState("");
+  const bot=useRef(null);
+
   useEffect(()=>{bot.current&&bot.current.scrollIntoView({behavior:"smooth"});},[msgs]);
-  const [apiKey,setApiKey]=useState(()=>localStorage.getItem("ai_key")||"");
-  const [showKey,setShowKey]=useState(!localStorage.getItem("ai_key"));
-  const saveKey=k=>{localStorage.setItem("ai_key",k);setApiKey(k);setShowKey(false);};
+
+  const saveKey=()=>{
+    const k=keyInput.trim();
+    if(!k||!k.startsWith("sk-")){setKeyStatus("error");return;}
+    localStorage.setItem(keyStorageKey,k);
+    setApiKey(k);setKeyStatus("ok");
+    setTimeout(()=>{setShowKeyPanel(false);setKeyStatus("");},1000);
+  };
+
+  const clearKey=()=>{
+    localStorage.removeItem(keyStorageKey);
+    setApiKey("");setKeyInput("");setShowKeyPanel(true);
+  };
+
   const send=async()=>{
     const txt=inp.trim();if(!txt||busy)return;
-    if(!apiKey){setShowKey(true);setErrt("Configura tu API key de Anthropic primero.");return;}
-    const next=[...msgs,{role:"user",content:txt}];setMsgs(next);setInp("");setBusy(true);setErrt("");
+    if(!apiKey){setShowKeyPanel(true);setErrt("Configura tu API key primero.");return;}
+    const next=[...msgs,{role:"user",content:txt}];
+    setMsgs(next);setInp("");setBusy(true);setErrt("");
     try{
       const res=await fetch("https://api.anthropic.com/v1/messages",{
         method:"POST",
         headers:{"Content-Type":"application/json","x-api-key":apiKey,"anthropic-version":"2023-06-01","anthropic-dangerous-allow-browser":"true"},
-        body:JSON.stringify({model:"claude-haiku-4-5-20251001",max_tokens:1000,system:AISYS,messages:next.map(m=>({role:m.role,content:m.content}))})
+        body:JSON.stringify({model:"claude-haiku-4-5-20251001",max_tokens:1024,system:AISYS,messages:next.map(m=>({role:m.role,content:m.content}))})
       });
       const d=await res.json();
-      if(d.error){setErrt("Error: "+d.error.message);setBusy(false);return;}
+      if(d.error){
+        const msg=d.error.type==="authentication_error"?"API key invalida. Revisa tu key en Configurar.":d.error.type==="rate_limit_error"?"Limite de uso alcanzado. Intenta en unos minutos.":"Error: "+d.error.message;
+        setErrt(msg);setBusy(false);return;
+      }
       const r=(d.content||[]).find(b=>b.type==="text");
       setMsgs(p=>[...p,{role:"assistant",content:r?r.text:"Sin respuesta."}]);
-    }catch(e){setErrt("Error de conexion. Verifica tu API key.");}
+    }catch(e){setErrt("Error de conexion. Verifica tu internet.");}
     setBusy(false);
   };
-  const sugs=user.role==="student"?["Como formulo mi pregunta de investigacion?","Que son los IOV?","Como identifico mi unidad de analisis?","Que se evalua en nota proceso?"]:["Como dar retroalimentacion efectiva?","Como evaluar la delimitacion del problema?","Explica la rubrica de nota proceso","Que diferencia un buen problema de diseno?"];
+
+  const sugs=user.role==="student"
+    ?["Como formulo mi pregunta de investigacion?","Que son los indicadores IOV?","Como identifico mi unidad de analisis?","Que se evalua en la nota de proceso?","Como hago un buen estado del arte?"]
+    :["Como dar retroalimentacion efectiva?","Como evaluar la delimitacion del problema?","Explica la rubrica de nota proceso","Que diferencia un buen problema de diseno?","Como usar la evaluacion cruzada?"];
+
   return (
-    <div style={{flex:1,display:"flex",flexDirection:"column",height:"100%",maxWidth:820}} className="fu">
-      <div style={{padding:"14px 22px 12px",borderBottom:"1px solid "+T.rule,background:T.surface,flexShrink:0}}>
-        <div style={{display:"flex",alignItems:"center",gap:10}}>
-          <div style={{width:32,height:32,background:"linear-gradient(135deg,#7035C4,#D94E1A)",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:14,fontWeight:700}}>AI</div>
-          <div><div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:20}}>Asistente de Seminario</div><div style={{fontSize:10,color:T.ink3}}>Powered by Claude - Especializado en Diseno UC</div></div>
+    <div style={{flex:1,display:"flex",flexDirection:"column",height:"100%"}} className="fu">
+      <div style={{padding:"12px 18px",borderBottom:"1px solid "+T.rule,background:T.surface,flexShrink:0,display:"flex",alignItems:"center",gap:10}}>
+        <div style={{width:34,height:34,background:"linear-gradient(135deg,#7035C4,#D94E1A)",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:13,fontWeight:700,flexShrink:0}}>AI</div>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:19}}>Asistente de Seminario</div>
+          <div style={{fontSize:10,color:T.ink3}}>Especializado en Diseno UC - Powered by Claude</div>
         </div>
+        <Btn v="ghost" sz="sm" onClick={()=>setShowKeyPanel(v=>!v)} s={{flexShrink:0,fontSize:10}}>{apiKey?"[Key] Configurada":"Configurar API Key"}</Btn>
+        {msgs.length>1&&<Btn v="ghost" sz="sm" onClick={()=>setMsgs([{role:"assistant",content:hi}])} s={{flexShrink:0,fontSize:10}}>Limpiar</Btn>}
       </div>
-      <div style={{flex:1,overflowY:"auto",padding:"16px 22px",display:"flex",flexDirection:"column",gap:12}}>
+
+      {showKeyPanel&&(
+        <div style={{padding:"14px 18px",background:"#111827",borderBottom:"1px solid #1f2937",flexShrink:0}}>
+          <div style={{fontSize:12,fontWeight:600,color:"#f9fafb",marginBottom:3}}>Tu API Key de Anthropic</div>
+          <div style={{fontSize:11,color:"#9ca3af",marginBottom:10,lineHeight:1.6}}>
+            Obten tu key gratis en{" "}
+            <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer" style={{color:"#60a5fa"}}>console.anthropic.com</a>.
+            {" "}La version gratuita es suficiente. Se guarda solo en tu navegador.
+          </div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"flex-start"}}>
+            <div style={{flex:1,minWidth:200}}>
+              <input type="password" value={keyInput} onChange={e=>setKeyInput(e.target.value)}
+                onKeyDown={e=>e.key==="Enter"&&saveKey()}
+                placeholder="sk-ant-api03-..."
+                style={{width:"100%",border:"1px solid "+(keyStatus==="error"?"#ef4444":"#374151"),padding:"8px 10px",fontSize:12,fontFamily:"monospace",background:"#1f2937",color:"#f9fafb",boxSizing:"border-box"}}
+              />
+              {keyStatus==="error"&&<div style={{fontSize:10,color:"#f87171",marginTop:3}}>La key debe empezar con "sk-"</div>}
+            </div>
+            <Btn v="primary" sz="sm" onClick={saveKey} dis={keyStatus==="saving"}>{keyStatus==="ok"?"OK Guardada":"Guardar key"}</Btn>
+            {apiKey&&<Btn v="ghost" sz="sm" onClick={clearKey} s={{color:"#9ca3af",borderColor:"#374151",fontSize:10}}>Eliminar</Btn>}
+            {apiKey&&<Btn v="ghost" sz="sm" onClick={()=>setShowKeyPanel(false)} s={{color:"#9ca3af",borderColor:"#374151",fontSize:10}}>Cerrar</Btn>}
+          </div>
+          {apiKey&&keyStatus!=="error"&&<div style={{marginTop:8,fontSize:10,color:"#34d399"}}>OK Key configurada - ya puedes usar el asistente</div>}
+        </div>
+      )}
+
+      {!apiKey&&!showKeyPanel&&(
+        <div style={{padding:"12px 18px",background:T.amberBg,borderBottom:"1px solid "+T.amber,flexShrink:0}}>
+          <div style={{fontSize:12,fontWeight:600,color:T.ink,marginBottom:2}}>Configura tu API Key para usar el asistente</div>
+          <div style={{fontSize:11,color:T.ink2}}>Haz clic en "Configurar API Key" arriba para comenzar. Es gratis y solo toma un minuto.</div>
+        </div>
+      )}
+
+      <div style={{flex:1,overflowY:"auto",padding:"14px 18px",display:"flex",flexDirection:"column",gap:10}}>
         {msgs.map((m,i)=>(
-          <div key={i} style={{display:"flex",gap:10,flexDirection:m.role==="user"?"row-reverse":"row"}}>
-            {m.role==="assistant"?<div style={{width:26,height:26,background:"linear-gradient(135deg,#7035C4,#D94E1A)",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:9,fontWeight:700,flexShrink:0}}>AI</div>:<Av t={user.av} sz={26}/>}
-            <div style={{maxWidth:"78%",padding:"10px 14px",background:m.role==="user"?T.ink:T.surface,border:"1px solid "+(m.role==="user"?"transparent":T.rule)}}><div style={{fontSize:13,color:m.role==="user"?"#fff":T.ink,lineHeight:1.7,whiteSpace:"pre-wrap",wordBreak:"break-word"}}>{m.content}</div></div>
+          <div key={i} style={{display:"flex",gap:8,flexDirection:m.role==="user"?"row-reverse":"row",alignItems:"flex-end"}}>
+            {m.role==="assistant"
+              ?<div style={{width:26,height:26,background:"linear-gradient(135deg,#7035C4,#D94E1A)",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:8,fontWeight:700,flexShrink:0}}>AI</div>
+              :<Av t={user.av} sz={26}/>
+            }
+            <div style={{maxWidth:"80%",padding:"9px 13px",background:m.role==="user"?T.ink:T.surface,border:"1px solid "+(m.role==="user"?"transparent":T.rule)}}>
+              <div style={{fontSize:13,color:m.role==="user"?"#fff":T.ink,lineHeight:1.75,whiteSpace:"pre-wrap",wordBreak:"break-word"}}>{m.content}</div>
+            </div>
           </div>
         ))}
-        {busy&&<div style={{display:"flex",gap:10,padding:"4px 0"}}><div style={{width:26,height:26,background:"linear-gradient(135deg,#7035C4,#D94E1A)",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:9,fontWeight:700,flexShrink:0}}>AI</div><div style={{padding:"10px 14px",background:T.surface,border:"1px solid "+T.rule,display:"flex",gap:3}}>{[0,1,2].map(n=><div key={n} className="pulse" style={{width:5,height:5,background:T.violet,borderRadius:"50%",animationDelay:(n*0.18)+"s"}}/>)}</div></div>}
-        {errt&&<div style={{padding:"8px 12px",background:T.redBg,fontSize:12,color:T.red}}>{errt}</div>}
+        {busy&&(
+          <div style={{display:"flex",gap:8,alignItems:"flex-end"}}>
+            <div style={{width:26,height:26,background:"linear-gradient(135deg,#7035C4,#D94E1A)",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:8,fontWeight:700,flexShrink:0}}>AI</div>
+            <div style={{padding:"10px 14px",background:T.surface,border:"1px solid "+T.rule,display:"flex",gap:4,alignItems:"center"}}>
+              {[0,1,2].map(n=><div key={n} className="pulse" style={{width:5,height:5,background:T.violet,borderRadius:"50%",animationDelay:(n*0.2)+"s"}}/>)}
+            </div>
+          </div>
+        )}
+        {errt&&<div style={{padding:"9px 13px",background:T.redBg,border:"1px solid "+T.red,fontSize:12,color:T.red,lineHeight:1.5}}>{errt}</div>}
         <div ref={bot}/>
       </div>
-      {showKey&&(
-        <div style={{padding:"12px 22px",background:T.amberBg,borderTop:"1px solid "+T.amber,flexShrink:0}}>
-          <div style={{fontSize:12,fontWeight:600,color:T.ink,marginBottom:4}}>Configura tu API Key de Anthropic</div>
-          <div style={{fontSize:11,color:T.ink3,marginBottom:8,lineHeight:1.5}}>Necesitas una API key de <a href="https://console.anthropic.com" target="_blank" style={{color:T.blue}}>console.anthropic.com</a> para usar el asistente. Se guarda solo en tu navegador.</div>
-          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-            <input type="password" placeholder="sk-ant-api03-..." defaultValue={apiKey}
-              style={{flex:1,minWidth:200,border:"1px solid "+T.amber,padding:"8px 10px",fontSize:12,fontFamily:"monospace",background:T.surface}}
-              id="ai-key-input"/>
-            <Btn v="primary" sz="sm" onClick={()=>{const v=document.getElementById("ai-key-input").value.trim();if(v)saveKey(v);}}>Guardar key</Btn>
-            {apiKey&&<Btn v="ghost" sz="sm" onClick={()=>setShowKey(false)}>Cancelar</Btn>}
+
+      {msgs.length<=1&&apiKey&&(
+        <div style={{padding:"0 18px 10px",flexShrink:0}}>
+          <Lbl c="Sugerencias" s={{marginBottom:6}}/>
+          <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+            {sugs.map((s,i)=><button key={i} onClick={()=>setInp(s)} style={{padding:"5px 10px",border:"1px solid "+T.rule,background:T.surface,color:T.ink2,fontSize:11,cursor:"pointer",textAlign:"left",lineHeight:1.4}}>{s}</button>)}
           </div>
         </div>
       )}
-      {!showKey&&apiKey&&<div style={{padding:"4px 22px",background:T.greenBg,borderTop:"1px solid "+T.green,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"space-between"}}><span style={{fontSize:10,color:T.green}}>API Key configurada</span><Btn v="link" sz="sm" onClick={()=>setShowKey(true)} s={{fontSize:10,color:T.ink3}}>Cambiar</Btn></div>}
-      {msgs.length<=1&&<div style={{padding:"0 22px 12px",flexShrink:0}}><Lbl c="Sugerencias" s={{marginBottom:7}}/><div style={{display:"flex",flexWrap:"wrap",gap:6}}>{sugs.map((s,i)=><button key={i} onClick={()=>setInp(s)} style={{padding:"5px 11px",border:"1px solid "+T.rule,background:T.surface,color:T.ink2,fontSize:11,cursor:"pointer"}}>{s}</button>)}</div></div>}
-      <div style={{padding:"10px 22px",borderTop:"1px solid "+T.rule,background:T.surface,flexShrink:0}}>
+
+      <div style={{padding:"10px 18px",borderTop:"1px solid "+T.rule,background:T.surface,flexShrink:0}}>
         <div style={{display:"flex",gap:8,alignItems:"flex-end"}}>
-          <Txa value={inp} onChange={e=>setInp(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send();}}} placeholder="Escribe tu pregunta... (Enter enviar)" rows={2} s={{flex:1,fontSize:13,resize:"none",maxHeight:100}}/>
-          <Btn v="primary" sz="md" onClick={send} dis={!inp.trim()||busy} s={{padding:"10px 15px",height:40,flexShrink:0}}>{busy?<Sp/>:"->"}</Btn>
+          <Txa value={inp} onChange={e=>setInp(e.target.value)}
+            onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send();}}}
+            placeholder={apiKey?"Escribe tu pregunta... (Enter para enviar)":"Configura tu API key para comenzar"}
+            rows={2} s={{flex:1,fontSize:13,resize:"none",maxHeight:100}} disabled={!apiKey}/>
+          <Btn v="primary" sz="md" onClick={send} dis={!inp.trim()||busy||!apiKey} s={{padding:"10px 14px",height:42,flexShrink:0}}>{busy?<Sp/>:"->"}</Btn>
         </div>
-        <div style={{fontSize:9,color:T.ink3,marginTop:5}}>Respuestas generadas por IA - Valida siempre con tu profesor/a</div>
+        <div style={{fontSize:9,color:T.ink3,marginTop:4}}>Respuestas por IA - Valida con tu profesor/a - Enter para enviar</div>
       </div>
     </div>
   );
 }
+
 
 function StageCard({stage,stageData,onUpdate,isProf,allStudents}){
   const [tab,setTab]=useState("contenido");
@@ -783,8 +1469,26 @@ function StageCard({stage,stageData,onUpdate,isProf,allStudents}){
           <div>
             <div style={{fontSize:12,color:T.ink3,marginBottom:12}}>Evalua tu propio avance en esta etapa. Para cada criterio, selecciona un color e indica que te falta.</div>
             <EvalForm stage={stage} mode="auto" data={aeData} onChange={d=>{setAeData(d);setAeChg(true);}} readOnly={isProf}/>
-            {!isProf&&aeChg&&<Btn v="primary" sz="sm" onClick={saveAE} s={{marginTop:12}}>{sv?"Guardando...":"Guardar autoevaluacion"}</Btn>}
-            {isProf&&<div style={{fontSize:11,color:T.ink3,marginTop:8,fontStyle:"italic"}}>Vista de lectura - autoevaluacion del estudiante.</div>}
+            {!isProf&&(
+              <div style={{display:"flex",gap:8,marginTop:10,flexWrap:"wrap",alignItems:"center"}}>
+                <Btn v="primary" sz="sm" onClick={saveAE} dis={sv}>{sv?"Guardando...":"Guardar"}</Btn>
+                <Btn v="accent" sz="sm" onClick={async()=>{
+                  await onUpdate({...stageData,autoEval:{...aeData,sentToProf:true,sentToProfDate:new Date().toLocaleDateString("es-CL")},status:stageData.status==="BORRADOR"?"LISTO_PARA_PROFESOR":stageData.status});
+                  setAeChg(false);
+                }}>Enviar a profesor</Btn>
+                {stageData.autoEval&&stageData.autoEval.sentToProf&&(
+                  <span style={{fontSize:10,color:T.green}}>OK Enviada el {stageData.autoEval.sentToProfDate||""}</span>
+                )}
+              </div>
+            )}
+            {isProf&&(
+              <div style={{fontSize:11,color:T.ink3,marginTop:8,fontStyle:"italic"}}>
+                Vista de lectura - autoevaluacion del estudiante.
+                {stageData.autoEval&&stageData.autoEval.sentToProf&&(
+                  <span style={{color:T.green,marginLeft:8}}>Enviada el {stageData.autoEval.sentToProfDate||""}</span>
+                )}
+              </div>
+            )}
           </div>
         )}
         {tab==="pares"&&isProf&&(
@@ -914,16 +1618,61 @@ function StudentProject({user,stages,onUpdateStages,section,peerAssignments,onPe
           ))}
         </div>
       )}
+      {(()=>{
+        const stageProgress=STAGES.map(st=>{
+          const sd=stages[st]||{};
+          const secs=SECS[st]||[];
+          if(secs.length===0) return {st,pct:0,hasSecs:false};
+          const filled=secs.filter(s=>{const c=sd.secs&&sd.secs[s.id]&&sd.secs[s.id].content;return c&&c.trim().length>20;}).length;
+          const pct=Math.round((filled/secs.length)*100);
+          return {st,pct,hasSecs:true,status:sd.status||"BORRADOR"};
+        });
+        const totalPct=Math.round(stageProgress.reduce((acc,s)=>acc+s.pct,0)/STAGES.length);
+        return (
+          <div style={{marginBottom:16,padding:"14px 16px",background:T.surface,border:"1px solid "+T.rule}}>
+            <div style={{display:"flex",alignItems:"baseline",gap:10,marginBottom:10}}>
+              <Lbl c="Progreso del proyecto"/>
+              <span style={{fontSize:22,fontFamily:"'Cormorant Garamond',serif",fontWeight:600,color:totalPct>=70?T.green:totalPct>=30?T.amber:T.ink}}>{totalPct}%</span>
+              <span style={{fontSize:10,color:T.ink3}}>completado</span>
+            </div>
+            <div style={{height:6,background:T.bg,marginBottom:12,position:"relative"}}>
+              <div style={{height:"100%",width:totalPct+"%",background:totalPct>=70?T.green:totalPct>=30?T.amber:T.accent,transition:"width 0.4s"}}/>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:5}}>
+              {stageProgress.map(({st,pct,status})=>(
+                <div key={st} style={{display:"flex",alignItems:"center",gap:8}}>
+                  <div style={{width:8,height:8,background:SC[st],borderRadius:1,flexShrink:0}}/>
+                  <span style={{fontSize:11,color:T.ink2,width:110,flexShrink:0}}>{st}</span>
+                  <div style={{flex:1,height:4,background:T.bg,position:"relative"}}>
+                    <div style={{height:"100%",width:pct+"%",background:pct>=70?T.green:pct>=30?T.amber:T.rule,transition:"width 0.4s"}}/>
+                  </div>
+                  <span style={{fontSize:10,color:T.ink3,width:28,textAlign:"right",flexShrink:0}}>{pct}%</span>
+                  <Pill st={status} s={{marginLeft:2}}/>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
       <div style={{display:"flex",flexDirection:"column",gap:8}}>
         {STAGES.map(st=>{
           const sd=stages[st]||{status:"BORRADOR"};
           const pending=sd.status==="SOLICITA_PARES";
+          const secs=SECS[st]||[];
+          const filled=secs.filter(s=>{const c=sd.secs&&sd.secs[s.id]&&sd.secs[s.id].content;return c&&c.trim().length>20;}).length;
+          const pct=secs.length>0?Math.round((filled/secs.length)*100):0;
           return (
-            <div key={st} onClick={()=>setSelStage(st)} style={{background:T.surface,border:"1px solid "+(pending?T.violet:T.rule),padding:"14px 18px",cursor:"pointer",display:"flex",alignItems:"center",gap:12,transition:"border-color 0.15s",WebkitTapHighlightColor:"transparent"}}
+            <div key={st} onClick={()=>setSelStage(st)} style={{background:T.surface,border:"1px solid "+(pending?T.violet:T.rule),padding:"12px 16px",cursor:"pointer",display:"flex",alignItems:"center",gap:10,transition:"border-color 0.15s",WebkitTapHighlightColor:"transparent"}}
               onMouseEnter={e=>e.currentTarget.style.borderColor=SC[st]} onMouseLeave={e=>e.currentTarget.style.borderColor=pending?T.violet:T.rule}>
-              <div style={{width:8,height:8,background:SC[st],borderRadius:1}}/>
+              <div style={{width:8,height:8,background:SC[st],borderRadius:1,flexShrink:0}}/>
               <span style={{flex:1,fontSize:13,fontWeight:600,color:T.ink}}>{st}</span>
-              {sd.peer&&sd.peer.submitted&&<span style={{fontSize:10,color:T.green,fontWeight:700}}>Par completado</span>}
+              {sd.peer&&sd.peer.submitted&&<span style={{fontSize:10,color:T.green,fontWeight:700}}>Par OK</span>}
+              <div style={{display:"flex",alignItems:"center",gap:6}}>
+                <div style={{width:48,height:3,background:T.bg,position:"relative"}}>
+                  <div style={{height:"100%",width:pct+"%",background:pct>=70?T.green:pct>=30?T.amber:T.rule}}/>
+                </div>
+                <span style={{fontSize:10,color:T.ink3,width:26,textAlign:"right"}}>{pct}%</span>
+              </div>
               <Pill st={sd.status}/>
               <span style={{color:T.ink3,fontSize:11}}>{">"}</span>
             </div>
@@ -1011,7 +1760,7 @@ function ProfPanel({students,section,allStudents,onUpdateStudent,onAssignPeer}){
             {sol.map(({s,st},i)=>(
               <Card key={i}>
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
-                  <div><div style={{fontSize:13,fontWeight:600,color:T.ink,marginBottom:2}}>{s.name}</div><div style={{fontSize:11,color:T.ink3}}>Etapa: {st} — solicitada {s.stages&&s.stages[st]&&s.stages[st].peer&&s.stages[st].peer.requestedAt?s.stages[st].peer.requestedAt:"recientemente"}</div></div>
+                  <div><div style={{fontSize:13,fontWeight:600,color:T.ink,marginBottom:2}}>{s.name}</div><div style={{fontSize:11,color:T.ink3}}>Etapa: {st}  -  solicitada {s.stages&&s.stages[st]&&s.stages[st].peer&&s.stages[st].peer.requestedAt?s.stages[st].peer.requestedAt:"recientemente"}</div></div>
                   <Btn v="accent" sz="sm" onClick={()=>{setModal({sid:s.id,st});setPeerSel("");}}>Asignar par evaluador</Btn>
                 </div>
               </Card>
@@ -1448,14 +2197,18 @@ function App(){
       <Sidebar user={user} view={view} setView={setView} section={curSec} sections={sections} onSelectSection={selSec} onLogout={handleLogout} open={sbOpen} onClose={()=>setSbOpen(false)}/>
       <div style={{flex:1,display:"flex",flexDirection:"column",height:"100vh",overflow:"hidden",minWidth:0}}>
         <div style={{height:48,background:T.surface,borderBottom:"1px solid "+T.rule,display:"flex",alignItems:"center",padding:"0 12px",gap:10,flexShrink:0,zIndex:10}}>
-          <button onClick={()=>setSbOpen(v=>!v)} style={{background:"none",border:"1px solid "+T.rule,padding:"6px 10px",cursor:"pointer",color:T.ink2,fontSize:15,lineHeight:1,minWidth:38,borderRadius:2,flexShrink:0}}>{sbOpen?"✕":"☰"}</button>
-          <span style={{fontSize:12,color:T.ink,fontWeight:600,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{VN[view]||view}{curSec&&user&&user.role==="professor"?" — "+curSec.code:""}</span>
+          <button onClick={()=>setSbOpen(v=>!v)} style={{background:"none",border:"1px solid "+T.rule,padding:"6px 10px",cursor:"pointer",color:T.ink2,fontSize:15,lineHeight:1,minWidth:38,borderRadius:2,flexShrink:0}}>{sbOpen?"X":"="}</button>
+          <span style={{fontSize:12,color:T.ink,fontWeight:600,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+            {VN[view]||view}
+            {user&&user.role==="professor"&&curSec&&<span style={{fontWeight:400,color:T.ink3}}> - {curSec.name||curSec.code}</span>}
+            {user&&user.role==="student"&&mySection&&<span style={{fontWeight:400,color:T.ink3}}> - {mySection.name||mySection.code}</span>}
+          </span>
           {myPeerAssigns.length>0&&<div style={{padding:"4px 8px",background:T.violetBg,border:"1px solid "+T.violet,fontSize:10,color:T.violet,fontWeight:700,flexShrink:0,whiteSpace:"nowrap"}}>{myPeerAssigns.length} rev.</div>}
           <Av t={user.av||user.name.slice(0,2)} sz={28}/>
         </div>
         <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column"}}>
           {view==="changepw"&&<div style={{flex:1,overflowY:"auto",padding:24}}><ChangePw user={user} onDone={()=>setView(user.role==="professor"?curSec?"panel":"home":"proyecto")}/></div>}
-          {view==="asistente"&&<AiAssistant user={user}/>}
+          {view==="asistente"&&<AiAssistant user={user} section={user.role==="professor"?curSec:mySection}/>}
           {view==="home"&&user.role==="professor"&&<ProfHome user={user} sections={sections} allUsers={allUsers} onSelectSection={selSec} onCreateSection={createSec}/>}
           {view==="panel"&&user.role==="professor"&&curSec&&<ProfPanel students={secStudentsData} section={curSec} allStudents={secStudents} onUpdateStudent={profUpdStu} onAssignPeer={assignPeer}/>}
           {view==="gantt"&&user.role==="professor"&&curSec&&<GanttView user={user} gantt={ganttData[curSec.id]||IGANG} onUpdate={g=>updGantt(curSec.id,g)}/>}
