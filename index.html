@@ -4,30 +4,57 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Seminario de Titulo - Diseno UC</title>
-  <!-- Firebase SDK -->
-  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-storage-compat.js"></script>
-  <!-- React + Babel -->
+  <!-- React + Babel (load first, synchronously) -->
   <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
-  <style>html,body{height:100%;margin:0;padding:0;background:#F4F2ED;}#root{height:100%;}</style>
+  <style>html,body{height:100%;margin:0;padding:0;background:#F4F2ED;}#root{height:100%;position:relative;}*{-webkit-tap-highlight-color:rgba(0,0,0,0.05);}@supports(padding:max(0px)){.mob-safe{padding-bottom:max(0px,env(safe-area-inset-bottom));}}</style>
 </head>
 <body>
 <div id="root"></div>
-<!-- Firebase config — reemplaza con tus valores -->
+<!-- Firebase: carga dinamica garantizada antes de React -->
 <script>
-  firebase.initializeApp({
-    apiKey:    "AIzaSyD_yOmqNRKCYPFrwzUQ-BOlLc1AxWZmEfE",
-    authDomain:"titulodno.firebaseapp.com",
-    projectId: "titulodno",
-    storageBucket: "titulodno.firebasestorage.app",
+(function(){
+  var FBVER="10.12.0";
+  var loaded=0;
+  var scripts=[
+    "https://www.gstatic.com/firebasejs/"+FBVER+"/firebase-app-compat.js",
+    "https://www.gstatic.com/firebasejs/"+FBVER+"/firebase-firestore-compat.js",
+    "https://www.gstatic.com/firebasejs/"+FBVER+"/firebase-storage-compat.js"
+  ];
+  function tryInit(){
+    if(typeof firebase==="undefined")return;
+    if(!firebase.apps||firebase.apps.length===0){
+      firebase.initializeApp({
+        apiKey:"AIzaSyD_yOmqNRKCYPFrwzUQ-BOlLc1AxWZmEfE",
+        authDomain:"titulodno.firebaseapp.com",
+        projectId:"titulodno",
+        storageBucket:"titulodno.firebasestorage.app"
+      });
+    }
+    window.DB_FS=firebase.firestore();
+    window.DB_ST=firebase.storage();
+    window._fbReady=true;
+    // Tell Babel to transform now
+    if(window._babelPending){
+      var s=document.createElement("script");
+      s.type="text/babel";
+      s.textContent=window._babelPending;
+      window._babelPending=null;
+      document.body.appendChild(s);
+    }
+  }
+  function onLoad(){loaded++;if(loaded>=3)tryInit();}
+  scripts.forEach(function(src){
+    var s=document.createElement("script");
+    s.src=src;
+    s.onload=onLoad;
+    s.onerror=function(){console.error("Failed to load",src);};
+    document.head.appendChild(s);
   });
-  window.DB_FS = firebase.firestore();
-  window.DB_ST = firebase.storage();
+})();
 </script>
-<script type="text/babel">
+<script id="app-source" type="text/plain">
 
 const { useState, useEffect, useRef } = React;
 
@@ -123,7 +150,11 @@ const IUSERS_DEMO=[
 ];
 const DB={
   async init(){
-    if(await S.get("init:v7"))return;
+    // v8: migrate from v7 without losing existing data
+    if(await S.get("init:v8"))return;
+    const hadV7=await S.get("init:v7");
+    if(hadV7){await S.set("init:v8",true);return;}
+    // Fresh install: seed demo data
     const users=IUSERS_DEMO.map(({pw:_,mc:__,...u})=>u);
     await S.set("users:all",users);
     const auth={};IUSERS_DEMO.forEach(u=>{auth[u.email]={pw:u.pw,mustChange:u.mc};});
@@ -132,7 +163,7 @@ const DB={
     await S.set("gantt:"+DS,IGANG);
     await S.set("stages:"+DST,mkStages());
     await S.set("invites:all",[]);
-    await S.set("init:v7",true);
+    await S.set("init:v8",true);
   },
   async getUsers(){return(await S.fresh("users:all"))||[];},
   async setUsers(d){await S.set("users:all",d);},
@@ -156,13 +187,13 @@ const DB={
 };
 
 const GS=()=>(
-  <style>{`@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=Outfit:wght@300;400;500;600&display=swap');*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}html,body{height:100%;background:#F4F2ED;font-family:'Outfit',sans-serif;color:#13120F;-webkit-font-smoothing:antialiased}input,textarea,select,button{font-family:'Outfit',sans-serif}::-webkit-scrollbar{width:4px;height:4px}::-webkit-scrollbar-thumb{background:#DDD8CE}::placeholder{color:#9E9488}textarea:focus,input:focus,select:focus{outline:1.5px solid #D94E1A;outline-offset:0}@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}.fu{animation:fadeUp 0.25s ease forwards}@keyframes spin{to{transform:rotate(360deg)}}.spin{animation:spin 0.9s linear infinite}@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}.pulse{animation:pulse 1.5s ease infinite}`}</style>
+  <style>{`@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=Outfit:wght@300;400;500;600&display=swap');*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}html,body{height:100%;background:#F4F2ED;font-family:'Outfit',sans-serif;color:#13120F;-webkit-font-smoothing:antialiased}input,textarea,select,button{font-family:'Outfit',sans-serif}::-webkit-scrollbar{width:4px;height:4px}::-webkit-scrollbar-thumb{background:#DDD8CE}::placeholder{color:#9E9488}textarea:focus,input:focus,select:focus{outline:1.5px solid #D94E1A;outline-offset:0}@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}.fu{animation:fadeUp 0.25s ease forwards}@keyframes spin{to{transform:rotate(360deg)}}.spin{animation:spin 0.9s linear infinite}@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}.pulse{animation:pulse 1.5s ease infinite}@media(max-width:640px){.mob-hide{display:none!important}.mob-stack{flex-direction:column!important}.mob-full{width:100%!important;max-width:unset!important}.mob-p{padding:10px 14px!important}}input,textarea,select{-webkit-appearance:none}textarea{font-size:15px!important}input{font-size:15px!important}`}</style>
 );
 const Sp=()=><div className="spin" style={{width:16,height:16,border:"2px solid "+T.rule,borderTopColor:T.accent,borderRadius:"50%",display:"inline-block"}}/>;
 const Av=({t="?",sz=32})=>{const bg=[T.accent,T.green,T.blue,T.violet,T.amber,T.red][(t||"A").charCodeAt(0)%6];return <div style={{width:sz,height:sz,background:bg,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:sz*0.33,fontWeight:700,flexShrink:0,borderRadius:2}}>{(t||"?").slice(0,2)}</div>;};
 const Lbl=({c,s})=><div style={{fontSize:9,fontWeight:700,letterSpacing:"0.12em",textTransform:"uppercase",color:T.ink3,...s}}>{c}</div>;
 const Btn=({children,onClick,v="ghost",sz="md",dis,s,...r})=>{
-  const sz2={sm:{fontSize:11,padding:"5px 11px"},md:{fontSize:12,padding:"8px 15px"},lg:{fontSize:13,padding:"11px 22px"}};
+  const sz2={sm:{fontSize:11,padding:"7px 12px"},md:{fontSize:12,padding:"8px 15px"},lg:{fontSize:13,padding:"11px 22px"}};
   const vs={primary:{background:T.ink,color:T.sidebarT,border:"none",opacity:dis?0.4:1},accent:{background:T.accent,color:"#fff",border:"none",opacity:dis?0.4:1},ghost:{background:"transparent",color:T.ink2,border:"1px solid "+T.rule},link:{background:"transparent",color:T.accent,border:"none",padding:0},danger:{background:T.redBg,color:T.red,border:"1px solid #F8CECE"},success:{background:T.greenBg,color:T.green,border:"1px solid "+T.green}};
   return <button onClick={onClick} disabled={dis} style={{display:"inline-flex",alignItems:"center",gap:6,cursor:dis?"not-allowed":"pointer",fontFamily:"'Outfit',sans-serif",fontWeight:500,lineHeight:1,transition:"all 0.15s",...sz2[sz],...vs[v],...s}} {...r}>{children}</button>;
 };
@@ -184,8 +215,8 @@ function Timeline(){
     <div style={{background:T.surface,border:"1px solid "+T.rule,padding:"20px 24px",marginBottom:18}}>
       <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:18,color:T.ink,marginBottom:4}}>Modelo Titulacion 2026 - Proceso, Hitos y Evaluaciones</div>
       <div style={{fontSize:11,color:T.ink3,marginBottom:20}}>Nota final: Nota proceso 30% + Informe 30% + Presentacion 40% = 100%. Minimo 4.0 para pase a Taller de Titulacion.</div>
-      <div style={{overflowX:"auto"}}>
-        <div style={{position:"relative",minWidth:700,padding:"30px 0 10px"}}>
+      <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
+        <div style={{position:"relative",minWidth:680,padding:"30px 0 10px"}}>
           <div style={{position:"absolute",top:44,left:40,right:40,height:2,background:T.rule}}/>
           <div style={{display:"flex",justifyContent:"space-between",position:"relative"}}>
             {hitos.map((h,i)=>(
@@ -514,9 +545,9 @@ function AuthPage({onLogin}){
           </div>
         </div>
       )}
-      <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:"32px 20px"}}>
-        <div style={{width:"100%",maxWidth:400}}>
-          <div style={{background:T.surface,border:"1px solid "+T.rule,padding:"32px 28px",marginBottom:14}}>
+      <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:"24px 16px"}}>
+        <div style={{width:"100%",maxWidth:420}}>
+          <div style={{background:T.surface,border:"1px solid "+T.rule,padding:"28px 22px",marginBottom:14}}>
             {mode==="login"&&(
               <>
                 <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:26,marginBottom:4}}>{step===1?"Bienvenido/a":"Ingresa tu contrasena"}</div>
@@ -669,9 +700,9 @@ function StageCard({stage,stageData,onUpdate,isProf,allStudents}){
         {peer.assigneeId&&!peer.submitted&&<span style={{fontSize:9,color:T.violet,fontWeight:700}}>Par asignado</span>}
         {peer.submitted&&<span style={{fontSize:9,color:T.green,fontWeight:700}}>Par completado</span>}
       </div>
-      <div style={{borderTop:"1px solid "+T.rule,display:"flex",background:T.bg}}>
+      <div style={{borderTop:"1px solid "+T.rule,display:"flex",background:T.bg,overflowX:"auto"}}>
         {TABS.map(t=>(
-          <button key={t} onClick={()=>setTab(t)} style={{padding:"6px 13px",fontSize:11,fontWeight:tab===t?700:400,color:tab===t?T.accent:T.ink3,background:"transparent",border:"none",borderBottom:tab===t?"2px solid "+T.accent:"2px solid transparent",cursor:"pointer"}}>
+          <button key={t} onClick={()=>setTab(t)} style={{padding:"8px 13px",fontSize:11,fontWeight:tab===t?700:400,color:tab===t?T.accent:T.ink3,background:"transparent",border:"none",borderBottom:tab===t?"2px solid "+T.accent:"2px solid transparent",cursor:"pointer",whiteSpace:"nowrap",flexShrink:0}}>
             {t==="contenido"?"Contenido":t==="autoeval"?"Autoevaluacion":t==="pares"?"Revision Pares":"Archivos"}
           </button>
         ))}
@@ -683,7 +714,10 @@ function StageCard({stage,stageData,onUpdate,isProf,allStudents}){
               <div key={sec.id} style={{borderBottom:"1px solid "+T.rule,paddingBottom:12}}>
                 <Lbl c={sec.t} s={{marginBottom:6}}/>
                 {canEdit?(
-                  <Txa defaultValue={(sd[sec.id]&&sd[sec.id].content)||""} rows={4} placeholder={sec.ph} onBlur={e=>updSec(sec.id,e.target.value,undefined)}/>
+                  <div>
+                    <Txa defaultValue={(sd[sec.id]&&sd[sec.id].content)||""} id={"txt_"+sec.id} rows={4} placeholder={sec.ph} onBlur={e=>updSec(sec.id,e.target.value,undefined)} s={{marginBottom:6}}/>
+                    <Btn v="ghost" sz="sm" onClick={()=>{const el=document.getElementById("txt_"+sec.id);if(el)updSec(sec.id,el.value,undefined);}}>Guardar avance</Btn>
+                  </div>
                 ):(
                   <div style={{fontSize:13,color:T.ink,lineHeight:1.7,whiteSpace:"pre-wrap",minHeight:40}}>{(sd[sec.id]&&sd[sec.id].content)||<span style={{color:T.ink3,fontStyle:"italic"}}>Sin contenido.</span>}</div>
                 )}
@@ -744,7 +778,10 @@ function StageCard({stage,stageData,onUpdate,isProf,allStudents}){
           </div>
         )}
         {tab==="archivos"&&(
-          <FileUpload files={stageData.files||[]} onAdd={addFile} onRemove={rmFile} canEdit={canEdit||isProf}/>
+          <div>
+            {!isProf&&<div style={{fontSize:11,color:T.ink3,padding:"6px 10px",background:T.bg,border:"1px solid "+T.rule,marginBottom:10,lineHeight:1.5}}>Los archivos son subidos por el profesor. Usa la pestana Contenido para escribir tus avances.</div>}
+            <FileUpload files={stageData.files||[]} onAdd={addFile} onRemove={rmFile} canEdit={isProf} folder={"stages"}/>
+          </div>
         )}
       </div>
     </div>
@@ -769,7 +806,7 @@ function PeerReviewView({assignment,onSubmit}){
   if(sub)return <div style={{padding:24,textAlign:"center",color:T.green,fontSize:16}}>Revision enviada correctamente.</div>;
 
   return (
-    <div style={{flex:1,overflowY:"auto",padding:"16px 20px"}} className="fu">
+    <div style={{flex:1,overflowY:"auto",padding:"16px 16px"}} className="fu">
       <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:22,marginBottom:6}}>Revision de par</div>
       <div style={{display:"flex",gap:12,marginBottom:16,flexWrap:"wrap"}}>
         <div style={{padding:"8px 14px",background:T.bg,border:"1px solid "+T.rule,fontSize:12}}><b>Etapa:</b> {stage}</div>
@@ -795,6 +832,17 @@ function StudentProject({user,stages,onUpdateStages,section,peerAssignments,onPe
   const [selPeer,setSelPeer]=useState(null);
   const myPeers=(peerAssignments||[]).filter(a=>a.reviewerId===user.id&&!a.submitted);
 
+  if(!user.sectionId){
+    return (
+      <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:"32px 20px"}} className="fu">
+        <div style={{maxWidth:400,textAlign:"center"}}>
+          <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:26,marginBottom:8}}>Sin seccion asignada</div>
+          <div style={{fontSize:13,color:T.ink3,marginBottom:16,lineHeight:1.7}}>Tu cuenta no esta asignada a ninguna seccion. Espera a que tu profesor/a te invite y registrate con el correo que te invito.</div>
+          <div style={{fontSize:12,color:T.ink2,padding:"12px 16px",background:T.amberBg,border:"1px solid "+T.amber,lineHeight:1.6}}>Si ya te registraste, contacta a tu profesor para que te asigne manualmente.</div>
+        </div>
+      </div>
+    );
+  }
   if(selPeer){
     return <PeerReviewView assignment={selPeer} onSubmit={async r=>{await onPeerSubmit(selPeer,r);setSelPeer(null);}}/>;
   }
@@ -804,7 +852,7 @@ function StudentProject({user,stages,onUpdateStages,section,peerAssignments,onPe
     return (
       <div style={{flex:1,display:"flex",flexDirection:"column",height:"100%"}}>
         <div style={{padding:"10px 20px",borderBottom:"1px solid "+T.rule,background:T.surface,display:"flex",alignItems:"center",gap:10}}>
-          <Btn v="link" sz="sm" onClick={()=>setSelStage(null)}>{"<"} Volver</Btn>
+          <button onClick={()=>setSelStage(null)} style={{background:T.bg,border:"1px solid "+T.rule,padding:"8px 14px",cursor:"pointer",fontSize:12,color:T.ink2,fontFamily:"'Outfit',sans-serif",flexShrink:0}}>&lt; Volver</button>
           <span style={{fontSize:14,fontWeight:600}}>{selStage}</span>
           <Pill st={sd.status}/>
         </div>
@@ -838,7 +886,7 @@ function StudentProject({user,stages,onUpdateStages,section,peerAssignments,onPe
           const sd=stages[st]||{status:"BORRADOR"};
           const pending=sd.status==="SOLICITA_PARES";
           return (
-            <div key={st} onClick={()=>setSelStage(st)} style={{background:T.surface,border:"1px solid "+(pending?T.violet:T.rule),padding:"14px 18px",cursor:"pointer",display:"flex",alignItems:"center",gap:12,transition:"border-color 0.15s"}}
+            <div key={st} onClick={()=>setSelStage(st)} style={{background:T.surface,border:"1px solid "+(pending?T.violet:T.rule),padding:"14px 18px",cursor:"pointer",display:"flex",alignItems:"center",gap:12,transition:"border-color 0.15s",WebkitTapHighlightColor:"transparent"}}
               onMouseEnter={e=>e.currentTarget.style.borderColor=SC[st]} onMouseLeave={e=>e.currentTarget.style.borderColor=pending?T.violet:T.rule}>
               <div style={{width:8,height:8,background:SC[st],borderRadius:1}}/>
               <span style={{flex:1,fontSize:13,fontWeight:600,color:T.ink}}>{st}</span>
@@ -897,8 +945,8 @@ function ProfPanel({students,section,allStudents,onUpdateStudent,onAssignPeer}){
       </div>
       <div style={{flex:1,overflowY:"auto",padding:"16px 20px"}}>
         {tab==="matriz"&&(
-          <div style={{overflowX:"auto"}}>
-            <table style={{borderCollapse:"collapse",width:"100%",minWidth:600}}>
+          <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
+            <table style={{borderCollapse:"collapse",width:"100%",minWidth:620}}>
               <thead>
                 <tr><th style={{padding:"7px 10px",textAlign:"left",fontSize:10,fontWeight:700,color:T.ink3,background:T.bg,border:"1px solid "+T.rule,minWidth:140}}>ESTUDIANTE</th>{STAGES.map(s=><th key={s} style={{padding:"5px 6px",textAlign:"center",fontSize:9,fontWeight:700,color:"#fff",background:SC[s],border:"1px solid "+T.rule,minWidth:80}}>{s.toUpperCase()}</th>)}</tr>
               </thead>
@@ -930,7 +978,7 @@ function ProfPanel({students,section,allStudents,onUpdateStudent,onAssignPeer}){
             {sol.map(({s,st},i)=>(
               <Card key={i}>
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
-                  <div><div style={{fontSize:13,fontWeight:600,color:T.ink,marginBottom:2}}>{s.name}</div><div style={{fontSize:11,color:T.ink3}}>Etapa: {st}</div></div>
+                  <div><div style={{fontSize:13,fontWeight:600,color:T.ink,marginBottom:2}}>{s.name}</div><div style={{fontSize:11,color:T.ink3}}>Etapa: {st} — solicitada {s.stages&&s.stages[st]&&s.stages[st].peer&&s.stages[st].peer.requestedAt?s.stages[st].peer.requestedAt:"recientemente"}</div></div>
                   <Btn v="accent" sz="sm" onClick={()=>{setModal({sid:s.id,st});setPeerSel("");}}>Asignar par evaluador</Btn>
                 </div>
               </Card>
@@ -1018,8 +1066,8 @@ function GanttView({user,gantt,onUpdate}){
           <Btn v="primary" sz="sm" dis={!nr.fecha||!nr.modulo||!nr.objetivo} onClick={add}>Agregar</Btn>
         </Card>
       )}
-      <div style={{overflowX:"auto"}}>
-        <table style={{borderCollapse:"collapse",width:"100%",minWidth:500}}>
+      <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
+        <table style={{borderCollapse:"collapse",width:"100%",minWidth:540}}>
           <thead><tr style={{background:T.ink}}>{["Fecha","Modulo","Objetivo","Tipo",isProf?"":null].filter(Boolean).map((h,i)=><th key={i} style={{padding:"7px 10px",textAlign:"left",fontSize:9,fontWeight:700,color:T.sidebarT,letterSpacing:"0.08em",whiteSpace:"nowrap"}}>{h.toUpperCase()}</th>)}</tr></thead>
           <tbody>
             {rows.map((row,i)=>(
@@ -1073,11 +1121,12 @@ function Resources({user,resources,onUpdate,section}){
       <div style={{height:1,background:T.rule,marginBottom:18}}/>
       {isProf&&(
         <Card s={{marginBottom:20}}>
-          <Lbl c="Nuevo recurso" s={{marginBottom:10}}/>
+          <Lbl c="Agregar recurso a la seccion" s={{marginBottom:10}}/>
+          <div style={{fontSize:11,color:T.ink3,marginBottom:10,padding:"7px 10px",background:T.amberBg,border:"1px solid "+T.amber,lineHeight:1.6}}>Solo el/la profesor/a puede agregar recursos. Los estudiantes los veran en modo lectura.</div>
           <div style={{display:"flex",flexDirection:"column",gap:8}}>
-            <Inp value={title} onChange={e=>setTitle(e.target.value)} placeholder="Titulo"/>
-            <Inp value={desc} onChange={e=>setDesc(e.target.value)} placeholder="Descripcion"/>
-            <Inp value={link} onChange={e=>setLink(e.target.value)} placeholder="URL (opcional)"/>
+            <Inp value={title} onChange={e=>setTitle(e.target.value)} placeholder="Titulo del recurso (requerido)"/>
+            <Txa value={desc} onChange={e=>setDesc(e.target.value)} rows={2} placeholder="Descripcion o instrucciones (opcional)" s={{fontSize:13}}/>
+            <Inp value={link} onChange={e=>setLink(e.target.value)} placeholder="URL externa (opcional, ej: drive.google.com/...)"/>
             <Btn v="primary" sz="sm" dis={!title.trim()} onClick={add}>Agregar recurso</Btn>
           </div>
         </Card>
@@ -1090,7 +1139,7 @@ function Resources({user,resources,onUpdate,section}){
               <div style={{flex:1}}>
                 <div style={{fontSize:13,fontWeight:600,color:T.ink,marginBottom:3}}>{r.title}</div>
                 {r.desc&&<div style={{fontSize:12,color:T.ink2,marginBottom:3}}>{r.desc}</div>}
-                {r.link&&<a href={r.link} target="_blank" rel="noreferrer" style={{fontSize:11,color:T.blue}}>{r.link}</a>}
+                {r.link&&<a href={r.link} target="_blank" rel="noreferrer" style={{fontSize:11,color:T.blue,display:"inline-flex",alignItems:"center",gap:4,padding:"3px 8px",border:"1px solid "+T.blue,background:T.blueBg,textDecoration:"none",marginTop:4}}>Abrir enlace externo</a>}
                 <div style={{fontSize:10,color:T.ink3,marginTop:4}}>{r.by} - {r.date}</div>
                 <div style={{marginTop:10}}>
                   <Lbl c="Archivos adjuntos" s={{marginBottom:6}}/>
@@ -1125,10 +1174,12 @@ function SectionConfig({section,onSave}){
   );
 }
 
-function StudentManager({section,students,allUsers,onRemoveStudent}){
+function StudentManager({section,students,allUsers,onRemoveStudent,onAssignStudent}){
   const [email,setEmail]=useState("");const [err,setErr]=useState("");const [ok,setOk]=useState("");const [invites,setInvites]=useState([]);const [busy,setBusy]=useState(false);
 
   useEffect(()=>{(async()=>{const all=await DB.getInvites();setInvites(all.filter(i=>i.sectionId===section.id));})();},[section.id]);
+  const unassigned=(allUsers||[]).filter(u=>u.role==="student"&&!u.sectionId);
+  const onAssignHere=async(uid)=>{if(onAssignStudent)await onAssignStudent(uid,section.id);};
 
   const addInvite=async()=>{
     setErr("");setOk("");const el=email.trim().toLowerCase();
@@ -1176,17 +1227,32 @@ function StudentManager({section,students,allUsers,onRemoveStudent}){
           </div>
         </div>
       )}
-      <Lbl c={"Estudiantes ("+students.length+")"} s={{marginBottom:8}}/>
-      <div style={{display:"flex",flexDirection:"column",gap:8}}>
+      <Lbl c={"Estudiantes asignados ("+students.length+")"} s={{marginBottom:8}}/>
+      <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:20}}>
         {students.length===0&&<div style={{fontSize:13,color:T.ink3,fontStyle:"italic"}}>Sin estudiantes registrados aun.</div>}
         {students.map(s=>(
-          <div key={s.id} style={{background:T.surface,border:"1px solid "+T.rule,padding:"10px 14px",display:"flex",alignItems:"center",gap:12}}>
+          <div key={s.id} style={{background:T.surface,border:"1px solid "+T.rule,padding:"10px 14px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
             <Av t={s.av||s.name.slice(0,2)} sz={30}/>
-            <div style={{flex:1}}><div style={{fontSize:13,fontWeight:600}}>{s.name}</div><div style={{fontSize:11,color:T.ink3}}>{s.email}</div></div>
+            <div style={{flex:1,minWidth:120}}><div style={{fontSize:13,fontWeight:600}}>{s.name}</div><div style={{fontSize:11,color:T.ink3}}>{s.email}</div></div>
             <Btn v="danger" sz="sm" onClick={()=>onRemoveStudent(s.id)}>Quitar</Btn>
           </div>
         ))}
       </div>
+      {unassigned.length>0&&(
+        <div style={{marginBottom:16}}>
+          <Lbl c={"Estudiantes sin seccion ("+unassigned.length+")"} s={{marginBottom:8,color:T.amber}}/>
+          <div style={{fontSize:11,color:T.ink3,marginBottom:8}}>Estudiantes registrados que no tienen seccion. Puedes asignarlos manualmente.</div>
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+            {unassigned.map(s=>(
+              <div key={s.id} style={{background:T.amberBg,border:"1px solid "+T.amber,padding:"10px 14px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                <Av t={s.av||s.name.slice(0,2)} sz={28}/>
+                <div style={{flex:1,minWidth:120}}><div style={{fontSize:12,fontWeight:600}}>{s.name}</div><div style={{fontSize:11,color:T.ink3}}>{s.email}</div></div>
+                <Btn v="primary" sz="sm" onClick={()=>onAssignHere(s.id)}>Asignar aqui</Btn>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1347,14 +1413,12 @@ function App(){
     <div style={{display:"flex",height:"100vh",overflow:"hidden"}}>
       <GS/>
       <Sidebar user={user} view={view} setView={setView} section={curSec} sections={sections} onSelectSection={selSec} onLogout={handleLogout} open={sbOpen} onClose={()=>setSbOpen(false)}/>
-      <div style={{flex:1,display:"flex",flexDirection:"column",height:"100vh",overflow:"hidden",marginLeft:0}}>
-        <div style={{height:44,background:T.surface,borderBottom:"1px solid "+T.rule,display:"flex",alignItems:"center",padding:"0 16px",gap:12,flexShrink:0,zIndex:10}}>
-          <button onClick={()=>setSbOpen(v=>!v)} style={{background:"none",border:"1px solid "+T.rule,padding:"5px 8px",cursor:"pointer",color:T.ink2,fontSize:13,lineHeight:1,minWidth:32,borderRadius:2}}>{sbOpen?"X":"="}</button>
-          <span style={{fontSize:11,color:T.ink,fontWeight:500}}>{VN[view]||view}</span>
-          {curSec&&user&&user.role==="professor"&&<span style={{fontSize:10,color:T.ink3}}>{curSec.code}</span>}
-          {myPeerAssigns.length>0&&<div style={{marginLeft:"auto",padding:"4px 10px",background:T.violetBg,border:"1px solid "+T.violet,fontSize:11,color:T.violet,fontWeight:700}}>{myPeerAssigns.length} revision(es) pendiente(s)</div>}
-          <div style={{flex:1}}/>
-          <Av t={user.av||user.name.slice(0,2)} sz={26}/>
+      <div style={{flex:1,display:"flex",flexDirection:"column",height:"100vh",overflow:"hidden",minWidth:0}}>
+        <div style={{height:48,background:T.surface,borderBottom:"1px solid "+T.rule,display:"flex",alignItems:"center",padding:"0 12px",gap:10,flexShrink:0,zIndex:10}}>
+          <button onClick={()=>setSbOpen(v=>!v)} style={{background:"none",border:"1px solid "+T.rule,padding:"6px 10px",cursor:"pointer",color:T.ink2,fontSize:15,lineHeight:1,minWidth:38,borderRadius:2,flexShrink:0}}>{sbOpen?"✕":"☰"}</button>
+          <span style={{fontSize:12,color:T.ink,fontWeight:600,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{VN[view]||view}{curSec&&user&&user.role==="professor"?" — "+curSec.code:""}</span>
+          {myPeerAssigns.length>0&&<div style={{padding:"4px 8px",background:T.violetBg,border:"1px solid "+T.violet,fontSize:10,color:T.violet,fontWeight:700,flexShrink:0,whiteSpace:"nowrap"}}>{myPeerAssigns.length} rev.</div>}
+          <Av t={user.av||user.name.slice(0,2)} sz={28}/>
         </div>
         <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column"}}>
           {view==="changepw"&&<div style={{flex:1,overflowY:"auto",padding:24}}><ChangePw user={user} onDone={()=>setView(user.role==="professor"?curSec?"panel":"home":"proyecto")}/></div>}
@@ -1364,10 +1428,11 @@ function App(){
           {view==="gantt"&&user.role==="professor"&&curSec&&<GanttView user={user} gantt={ganttData[curSec.id]||IGANG} onUpdate={g=>updGantt(curSec.id,g)}/>}
           {view==="recursos"&&user.role==="professor"&&curSec&&<Resources user={user} resources={resData[curSec.id]||[]} onUpdate={r=>updRes(curSec.id,r)} section={curSec}/>}
           {view==="config"&&user.role==="professor"&&curSec&&<SectionConfig section={curSec} onSave={updSec}/>}
-          {view==="estudiantes"&&user.role==="professor"&&curSec&&<StudentManager section={curSec} students={secStudents} allUsers={allUsers} onRemoveStudent={rmStu}/>}
+          {view==="estudiantes"&&user.role==="professor"&&curSec&&<StudentManager section={curSec} students={secStudents} allUsers={allUsers} onRemoveStudent={rmStu} onAssignStudent={async(uid,sid)=>{const upd=allUsers.map(u=>u.id===uid?{...u,sectionId:sid}:u);setAllUsers(upd);await DB.setUsers(upd);}}/>}
           {view==="proyecto"&&user.role==="student"&&myStages&&<StudentProject user={user} stages={myStages} onUpdateStages={s=>updStuStages(user.id,s)} section={mySection} peerAssignments={peerAssigns} onPeerSubmit={submitPeer}/>}
           {view==="proceso"&&user.role==="student"&&<div style={{flex:1,overflowY:"auto",padding:"16px 20px"}}><Timeline/></div>}
-          {view==="gantt"&&user.role==="student"&&mySection&&<GanttView user={user} gantt={ganttData[mySection.id]||IGANG}/>}
+          {view==="gantt"&&user.role==="student"&&mySection&&<GanttView user={user} gantt={ganttData[mySection.id]||IGANG} onUpdate={null}/>}
+          {view==="gantt"&&user.role==="student"&&!mySection&&<div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:24}}><div style={{fontSize:13,color:T.ink3,textAlign:"center"}}>Sin seccion asignada. El Gantt estara disponible cuando tu profesor te asigne.</div></div>}
           {view==="recursos"&&user.role==="student"&&<Resources user={user} resources={mySection?resData[mySection.id]||[]:[]} onUpdate={r=>mySection&&updRes(mySection.id,r)} section={mySection}/>}
         </div>
       </div>
@@ -1377,6 +1442,23 @@ function App(){
 
 
 ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
+</script>
+<script>
+// Extract the app source and defer until Firebase is ready
+(function(){
+  var src=document.getElementById("app-source");
+  if(!src)return;
+  var code=src.textContent;
+  src.remove();
+  function run(){
+    var s=document.createElement("script");
+    s.type="text/babel";
+    s.textContent=code;
+    document.body.appendChild(s);
+  }
+  if(window._fbReady){run();}
+  else{window._babelPending=code;}
+})();
 </script>
 </body>
 </html>
