@@ -7,6 +7,16 @@
   <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+  <script>
+  // Suppress Babel in-browser transform warning (informational only, not an error)
+  (function(){
+    var _warn=console.warn;
+    console.warn=function(){
+      if(arguments[0]&&typeof arguments[0]==="string"&&arguments[0].indexOf("in-browser Babel transformer")>-1)return;
+      _warn.apply(console,arguments);
+    };
+  })();
+  </script>
   <style>html,body{height:100%;margin:0;padding:0;background:#F4F2ED;}#root{height:100%;position:relative;}*{-webkit-tap-highlight-color:rgba(0,0,0,0.05);box-sizing:border-box;}</style>
 </head>
 <body>
@@ -333,35 +343,59 @@ function CrossEval({uid,initial,onSave,readOnly}){
 
 function FileViewer({file,onClose}){
   if(!file)return null;
-  const src=file.url||file.data||"";
+  const [blobUrl,setBlobUrl]=React.useState(null);
   const isImg=(file.type&&file.type.startsWith("image/"))||/\.(jpg|jpeg|png|gif|webp)$/i.test(file.name||"");
   const isPdf=(file.type==="application/pdf")||/\.pdf$/i.test(file.name||"");
   const isWord=/\.(doc|docx)$/i.test(file.name||"");
+  // Convert base64 data URI to blob URL for reliable iframe rendering
+  React.useEffect(()=>{
+    if(!file.data)return;
+    try{
+      const arr=file.data.split(",");
+      const mime=arr[0].match(/:(.*?);/)[1];
+      const bstr=atob(arr[1]);
+      const u8=new Uint8Array(bstr.length);
+      for(let i=0;i<bstr.length;i++)u8[i]=bstr.charCodeAt(i);
+      const blob=new Blob([u8],{type:mime});
+      const url=URL.createObjectURL(blob);
+      setBlobUrl(url);
+      return()=>URL.revokeObjectURL(url);
+    }catch(e){setBlobUrl(null);}
+  },[file.data]);
+  const src=file.url||blobUrl||file.data||"";
   const dl=()=>{
-    if(file.url){const a=document.createElement("a");a.href=file.url;a.target="_blank";a.download=file.name||"archivo";a.click();}
-    else if(file.data){const a=document.createElement("a");a.href=file.data;a.download=file.name||"archivo";a.click();}
+    const a=document.createElement("a");
+    a.href=file.url||file.data||"";
+    a.download=file.name||"archivo";
+    a.click();
   };
-  const wordViewer=file.url?`https://docs.google.com/gview?url=${encodeURIComponent(file.url)}&embedded=true`:null;
+  const ftLabel=isImg?"IMG":isPdf?"PDF":"DOC";
+  const ftBg=isImg?T.greenBg:isPdf?T.redBg:T.blueBg;
+  const ftC=isImg?T.green:isPdf?T.red:T.blue;
   return (
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:9999,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:16}} onClick={onClose}>
-      <div style={{background:T.surface,border:"1px solid "+T.rule,width:"96%",maxWidth:960,maxHeight:"93vh",display:"flex",flexDirection:"column",boxShadow:"0 20px 60px rgba(0,0,0,0.4)"}} onClick={e=>e.stopPropagation()}>
-        <div style={{padding:"10px 16px",borderBottom:"1px solid "+T.rule,display:"flex",alignItems:"center",gap:10,flexShrink:0,background:T.bg}}>
-          <div style={{fontSize:10,padding:"2px 7px",fontWeight:700,background:isImg?T.greenBg:isPdf?T.redBg:T.blueBg,color:isImg?T.green:isPdf?T.red:T.blue}}>{isImg?"IMG":isPdf?"PDF":"DOC"}</div>
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.8)",zIndex:9999,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:12}} onClick={onClose}>
+      <div style={{background:T.surface,width:"97%",maxWidth:980,maxHeight:"95vh",display:"flex",flexDirection:"column",boxShadow:"0 24px 80px rgba(0,0,0,0.5)"}} onClick={e=>e.stopPropagation()}>
+        <div style={{padding:"10px 14px",borderBottom:"1px solid "+T.rule,display:"flex",alignItems:"center",gap:8,flexShrink:0,background:T.bg}}>
+          <div style={{fontSize:10,padding:"2px 7px",fontWeight:700,background:ftBg,color:ftC,flexShrink:0}}>{ftLabel}</div>
           <span style={{flex:1,fontSize:13,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{file.name}</span>
+          <span style={{fontSize:10,color:T.ink3,flexShrink:0}}>{file.size}</span>
           <Btn v="ghost" sz="sm" onClick={dl}>Descargar</Btn>
-          {file.url&&<Btn v="ghost" sz="sm" onClick={()=>window.open(file.url,"_blank")}>Abrir en pestana</Btn>}
-          <button onClick={onClose} style={{background:T.ink,border:"none",padding:"5px 12px",cursor:"pointer",fontSize:12,color:"#fff",fontFamily:"'Outfit',sans-serif"}}>X Cerrar</button>
+          <button onClick={onClose} style={{background:T.ink,border:"none",padding:"6px 14px",cursor:"pointer",fontSize:12,color:"#fff",fontFamily:"'Outfit',sans-serif",flexShrink:0}}>Cerrar</button>
         </div>
-        <div style={{flex:1,overflow:"auto",background:"#f0f0f0",display:"flex",alignItems:"flex-start",justifyContent:"center"}}>
-          {isImg&&src&&<img src={src} alt={file.name} style={{maxWidth:"100%",maxHeight:"80vh",display:"block",objectFit:"contain",margin:"auto"}}/>}
-          {isPdf&&src&&<iframe src={src} width="100%" style={{height:"80vh",minHeight:500,border:"none"}} title={file.name}/>}
-          {isWord&&wordViewer&&<iframe src={wordViewer} width="100%" style={{height:"80vh",minHeight:500,border:"none"}} title={file.name}/>}
-          {!isImg&&!isPdf&&(!isWord||!wordViewer)&&(
-            <div style={{padding:60,textAlign:"center",background:T.surface,margin:"auto"}}>
-              <div style={{fontSize:40,marginBottom:16}}>{"[DOC]"}</div>
-              <div style={{fontSize:14,fontWeight:600,marginBottom:8}}>{file.name}</div>
-              <div style={{fontSize:12,color:T.ink3,marginBottom:24}}>Vista previa no disponible. Descarga el archivo para abrirlo.</div>
-              <Btn v="primary" sz="lg" onClick={dl}>Descargar archivo</Btn>
+        <div style={{flex:1,overflow:"auto",background:"#e8e8e8",display:"flex",alignItems:"flex-start",justifyContent:"center",minHeight:200}}>
+          {isImg&&src&&<img src={src} alt={file.name} style={{maxWidth:"100%",maxHeight:"85vh",display:"block",objectFit:"contain",margin:"auto",padding:8}}/>}
+          {isPdf&&src&&<iframe src={src} width="100%" style={{height:"82vh",minHeight:400,border:"none",display:"block"}} title={file.name}/>}
+          {isWord&&src&&<iframe src={"https://docs.google.com/gview?url="+encodeURIComponent(src)+"&embedded=true"} width="100%" style={{height:"82vh",minHeight:400,border:"none",display:"block"}} title={file.name}/>}
+          {!isImg&&!isPdf&&!isWord&&(
+            <div style={{padding:60,textAlign:"center",background:T.surface,margin:"auto",width:"100%"}}>
+              <div style={{fontSize:13,color:T.ink2,marginBottom:20}}>Vista previa no disponible para este formato.</div>
+              <Btn v="primary" sz="lg" onClick={dl}>Descargar {file.name}</Btn>
+            </div>
+          )}
+          {(isPdf||isWord)&&!src&&(
+            <div style={{padding:40,textAlign:"center",margin:"auto"}}>
+              <div style={{fontSize:12,color:T.ink3,marginBottom:12}}>Cargando vista previa...</div>
+              <Btn v="ghost" sz="sm" onClick={dl}>Descargar mientras tanto</Btn>
             </div>
           )}
         </div>
@@ -602,7 +636,26 @@ function AiAssistant({user}){
   const hi="Hola "+user.name.split(" ")[0]+" - Soy tu asistente del Seminario. Puedo ayudarte con tus etapas, criterios de evaluacion, metodologia o retroalimentacion. En que estas trabajando?";
   const [msgs,setMsgs]=useState([{role:"assistant",content:hi}]);const [inp,setInp]=useState("");const [busy,setBusy]=useState(false);const [errt,setErrt]=useState("");const bot=useRef(null);
   useEffect(()=>{bot.current&&bot.current.scrollIntoView({behavior:"smooth"});},[msgs]);
-  const send=async()=>{const txt=inp.trim();if(!txt||busy)return;const next=[...msgs,{role:"user",content:txt}];setMsgs(next);setInp("");setBusy(true);setErrt("");try{const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,system:AISYS,messages:next.map(m=>({role:m.role,content:m.content}))})});const d=await res.json();if(d.error){setErrt("Error: "+d.error.message);setBusy(false);return;}const r=(d.content||[]).find(b=>b.type==="text");setMsgs(p=>[...p,{role:"assistant",content:r?r.text:"Sin respuesta."}]);}catch(e){setErrt("Error de conexion.");}setBusy(false);};
+  const [apiKey,setApiKey]=useState(()=>localStorage.getItem("ai_key")||"");
+  const [showKey,setShowKey]=useState(!localStorage.getItem("ai_key"));
+  const saveKey=k=>{localStorage.setItem("ai_key",k);setApiKey(k);setShowKey(false);};
+  const send=async()=>{
+    const txt=inp.trim();if(!txt||busy)return;
+    if(!apiKey){setShowKey(true);setErrt("Configura tu API key de Anthropic primero.");return;}
+    const next=[...msgs,{role:"user",content:txt}];setMsgs(next);setInp("");setBusy(true);setErrt("");
+    try{
+      const res=await fetch("https://api.anthropic.com/v1/messages",{
+        method:"POST",
+        headers:{"Content-Type":"application/json","x-api-key":apiKey,"anthropic-version":"2023-06-01","anthropic-dangerous-allow-browser":"true"},
+        body:JSON.stringify({model:"claude-haiku-4-5-20251001",max_tokens:1000,system:AISYS,messages:next.map(m=>({role:m.role,content:m.content}))})
+      });
+      const d=await res.json();
+      if(d.error){setErrt("Error: "+d.error.message);setBusy(false);return;}
+      const r=(d.content||[]).find(b=>b.type==="text");
+      setMsgs(p=>[...p,{role:"assistant",content:r?r.text:"Sin respuesta."}]);
+    }catch(e){setErrt("Error de conexion. Verifica tu API key.");}
+    setBusy(false);
+  };
   const sugs=user.role==="student"?["Como formulo mi pregunta de investigacion?","Que son los IOV?","Como identifico mi unidad de analisis?","Que se evalua en nota proceso?"]:["Como dar retroalimentacion efectiva?","Como evaluar la delimitacion del problema?","Explica la rubrica de nota proceso","Que diferencia un buen problema de diseno?"];
   return (
     <div style={{flex:1,display:"flex",flexDirection:"column",height:"100%",maxWidth:820}} className="fu">
@@ -623,6 +676,20 @@ function AiAssistant({user}){
         {errt&&<div style={{padding:"8px 12px",background:T.redBg,fontSize:12,color:T.red}}>{errt}</div>}
         <div ref={bot}/>
       </div>
+      {showKey&&(
+        <div style={{padding:"12px 22px",background:T.amberBg,borderTop:"1px solid "+T.amber,flexShrink:0}}>
+          <div style={{fontSize:12,fontWeight:600,color:T.ink,marginBottom:4}}>Configura tu API Key de Anthropic</div>
+          <div style={{fontSize:11,color:T.ink3,marginBottom:8,lineHeight:1.5}}>Necesitas una API key de <a href="https://console.anthropic.com" target="_blank" style={{color:T.blue}}>console.anthropic.com</a> para usar el asistente. Se guarda solo en tu navegador.</div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            <input type="password" placeholder="sk-ant-api03-..." defaultValue={apiKey}
+              style={{flex:1,minWidth:200,border:"1px solid "+T.amber,padding:"8px 10px",fontSize:12,fontFamily:"monospace",background:T.surface}}
+              id="ai-key-input"/>
+            <Btn v="primary" sz="sm" onClick={()=>{const v=document.getElementById("ai-key-input").value.trim();if(v)saveKey(v);}}>Guardar key</Btn>
+            {apiKey&&<Btn v="ghost" sz="sm" onClick={()=>setShowKey(false)}>Cancelar</Btn>}
+          </div>
+        </div>
+      )}
+      {!showKey&&apiKey&&<div style={{padding:"4px 22px",background:T.greenBg,borderTop:"1px solid "+T.green,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"space-between"}}><span style={{fontSize:10,color:T.green}}>API Key configurada</span><Btn v="link" sz="sm" onClick={()=>setShowKey(true)} s={{fontSize:10,color:T.ink3}}>Cambiar</Btn></div>}
       {msgs.length<=1&&<div style={{padding:"0 22px 12px",flexShrink:0}}><Lbl c="Sugerencias" s={{marginBottom:7}}/><div style={{display:"flex",flexWrap:"wrap",gap:6}}>{sugs.map((s,i)=><button key={i} onClick={()=>setInp(s)} style={{padding:"5px 11px",border:"1px solid "+T.rule,background:T.surface,color:T.ink2,fontSize:11,cursor:"pointer"}}>{s}</button>)}</div></div>}
       <div style={{padding:"10px 22px",borderTop:"1px solid "+T.rule,background:T.surface,flexShrink:0}}>
         <div style={{display:"flex",gap:8,alignItems:"flex-end"}}>
