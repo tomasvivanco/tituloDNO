@@ -1,16 +1,49 @@
-# React + Vite
+# titulodno_2 (MVP para lanzamiento rápido)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Esta versión toma la app original y deja un flujo funcional para pilotos con usuarios reales en GitHub Pages.
 
-Currently, two official plugins are available:
+## Qué quedó implementado
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+1. **Registro y acceso seguro (cliente)**
+   - Login y registro en español.
+   - Registro solo mediante token de invitación.
+   - Restricción de correos institucionales `@uc.cl`.
+   - Contraseñas hasheadas con SHA-256 + salt (Web Crypto API).
 
-## React Compiler
+2. **Datos estructurados**
+   - Modelo único en `localStorage` para: usuarios, secciones, matrículas, invitaciones, recursos y archivos.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+3. **Gestión de archivos**
+   - Adjuntos en recursos (almacenados localmente en Data URL) con descarga directa desde la interfaz.
 
-## Expanding the ESLint configuration
+4. **Usabilidad**
+   - Flujo por rol (profesor / estudiante).
+   - Mensajes de validación y estado.
+   - Interfaz compacta para ejecución rápida.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## Restricción institucional
+
+- El acceso y las invitaciones aceptan únicamente correos que terminen en `@uc.cl`.
+
+## Ejecutar local
+
+```bash
+npm install
+npm run dev
+```
+
+## Deploy en GitHub Pages
+
+El proyecto ya incluye scripts de deploy con `gh-pages` y `base: '/tituloDNO/'` en Vite.
+
+```bash
+npm run build
+npm run deploy
+```
+
+> Si tu repositorio se llama distinto a `tituloDNO`, actualiza `base` en `vite.config.js`.
+
+## Usuarios demo
+
+- `profesora.demo@uc.cl` / `Demo2026!`
+- `estudiante.demo@uc.cl` / `Demo2026!`
