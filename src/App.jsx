@@ -101,6 +101,8 @@ const DB={
   async getInvites(){return(await S.get("invites:all"))||[];},
   async setInvites(d){await S.set("invites:all",d);},
   async findInvite(email){const inv=await this.getInvites();return inv.find(i=>i.email.toLowerCase()===email.toLowerCase())||null;},
+  async getResetTokens(){return(await S.get("reset:tokens"))||[];},
+  async setResetTokens(d){await S.set("reset:tokens",d);},
 };
 
 const GS=()=>(
@@ -108,15 +110,30 @@ const GS=()=>(
 );
 const Sp=()=><div className="spin" style={{width:16,height:16,border:"2px solid "+T.rule,borderTopColor:T.accent,borderRadius:"50%",display:"inline-block"}}/>;
 const Av=({t="?",sz=32})=>{const bg=[T.accent,T.green,T.blue,T.violet,T.amber,T.red][(t||"A").charCodeAt(0)%6];return <div style={{width:sz,height:sz,background:bg,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:sz*0.33,fontWeight:700,flexShrink:0,borderRadius:2}}>{(t||"?").slice(0,2)}</div>;};
+const mkFieldName=(name,id,placeholder)=>{
+  if(name)return name;
+  if(id)return id;
+  if(placeholder)return placeholder.toString().replace(/[^a-zA-Z0-9]+/g,"_").replace(/^_+|_+$/g,"").slice(0,24).toLowerCase();
+  return "field";
+};
 const Lbl=({c,s})=><div style={{fontSize:9,fontWeight:700,letterSpacing:"0.12em",textTransform:"uppercase",color:T.ink3,...s}}>{c}</div>;
 const Btn=({children,onClick,v="ghost",sz="md",dis,s,...r})=>{
   const sz2={sm:{fontSize:11,padding:"5px 11px"},md:{fontSize:12,padding:"8px 15px"},lg:{fontSize:13,padding:"11px 22px"}};
   const vs={primary:{background:T.ink,color:T.sidebarT,border:"none",opacity:dis?0.4:1},accent:{background:T.accent,color:"#fff",border:"none",opacity:dis?0.4:1},ghost:{background:"transparent",color:T.ink2,border:"1px solid "+T.rule},link:{background:"transparent",color:T.accent,border:"none",padding:0},danger:{background:T.redBg,color:T.red,border:"1px solid #F8CECE"},success:{background:T.greenBg,color:T.green,border:"1px solid "+T.green}};
   return <button onClick={onClick} disabled={dis} style={{display:"inline-flex",alignItems:"center",gap:6,cursor:dis?"not-allowed":"pointer",fontFamily:"'Outfit',sans-serif",fontWeight:500,lineHeight:1,transition:"all 0.15s",...sz2[sz],...vs[v],...s}} {...r}>{children}</button>;
 };
-const Inp=({s,...p})=><input style={{width:"100%",border:"1px solid "+T.rule,padding:"9px 12px",fontSize:13,background:T.surface,color:T.ink,...s}} {...p}/>;
-const Sel=({s,children,...p})=><select style={{border:"1px solid "+T.rule,padding:"8px 10px",fontSize:12,background:T.surface,color:T.ink,...s}} {...p}>{children}</select>;
-const Txa=({s,...p})=><textarea style={{width:"100%",border:"1px solid "+T.rule,padding:"10px 12px",fontSize:13,background:T.surface,color:T.ink,resize:"vertical",lineHeight:1.6,...s}} {...p}/>;
+const Inp=({s,name,id,placeholder,...p})=>{
+  const computedName=mkFieldName(name,id,placeholder);
+  return <input id={id} name={computedName} placeholder={placeholder} style={{width:"100%",border:"1px solid "+T.rule,padding:"9px 12px",fontSize:13,background:T.surface,color:T.ink,...s}} {...p}/>;
+};
+const Sel=({s,name,id,children,...p})=>{
+  const computedName=mkFieldName(name,id);
+  return <select id={id} name={computedName} style={{border:"1px solid "+T.rule,padding:"8px 10px",fontSize:12,background:T.surface,color:T.ink,...s}} {...p}>{children}</select>;
+};
+const Txa=({s,name,id,placeholder,...p})=>{
+  const computedName=mkFieldName(name,id,placeholder);
+  return <textarea id={id} name={computedName} placeholder={placeholder} style={{width:"100%",border:"1px solid "+T.rule,padding:"10px 12px",fontSize:13,background:T.surface,color:T.ink,resize:"vertical",lineHeight:1.6,...s}} {...p}/>;
+};
 const Pill=({st})=>{const c=SCFG[st]||SCFG.BORRADOR;return <span style={{fontSize:9,fontWeight:700,padding:"2px 7px",background:c.bg,color:c.c,letterSpacing:"0.05em",whiteSpace:"nowrap",borderRadius:2}}>{c.l}</span>;};
 const Card=({children,s})=><div style={{background:T.surface,border:"1px solid "+T.rule,padding:"16px",...s}}>{children}</div>;
 
@@ -277,14 +294,35 @@ function CrossEval({uid,initial,onSave,readOnly}){
 
 function FileUpload({files,onAdd,onRemove,canEdit=true}){
   const inp=useRef(null);
+  const [uploadMsg,setUploadMsg]=useState("");
+  const [uploadSeverity,setUploadSeverity]=useState("info");
+  const [uploadBusy,setUploadBusy]=useState(false);
   const handle=e=>{
     const file=e.target.files[0];if(!file)return;
-    if(file.size>1500000){alert("Archivo demasiado grande. Maximo 1.5MB.");return;}
+    const allowed=["pdf","doc","docx","jpg","jpeg","png","gif","txt"];
+    const ext=(file.name.split(".").pop()||"").toLowerCase();
+    if(!allowed.includes(ext)){setUploadMsg("Formato no permitido.");setUploadSeverity("error");return;}
+    const maxSize=1.5*1024*1024;
+    if(file.size>maxSize){setUploadMsg("Archivo supera 1.5MB.");setUploadSeverity("error");return;}
+    setUploadBusy(true);
+    setUploadMsg("Adjuntando archivo...");
+    setUploadSeverity("info");
     const reader=new FileReader();
-    reader.onload=ev=>{
+    reader.onload=async(ev)=>{
       const entry={id:Date.now()+"",name:file.name,type:file.type,size:Math.round(file.size/1024)+"KB",data:ev.target.result,date:new Date().toLocaleDateString("es-CL")};
-      onAdd(entry);
+      try{
+        if(onAdd)await onAdd(entry);
+        setUploadMsg("Archivo adjuntado.");
+        setUploadSeverity("success");
+        setTimeout(()=>setUploadMsg(""),3500);
+      }catch(err){
+        setUploadMsg("Error al guardar el archivo.");
+        setUploadSeverity("error");
+      }finally{
+        setUploadBusy(false);
+      }
     };
+    reader.onerror=()=>{setUploadMsg("No se pudo leer el archivo.");setUploadSeverity("error");setUploadBusy(false);};
     reader.readAsDataURL(file);
     e.target.value="";
   };
@@ -305,9 +343,11 @@ function FileUpload({files,onAdd,onRemove,canEdit=true}){
       </div>
       {canEdit&&(
         <>
-          <input type="file" ref={inp} onChange={handle} style={{display:"none"}} accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.gif,.txt"/>
-          <Btn v="ghost" sz="sm" onClick={()=>inp.current&&inp.current.click()}>+ Adjuntar archivo (max 1.5MB)</Btn>
+          <input name="attachment" type="file" ref={inp} onChange={handle} style={{display:"none"}} accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.gif,.txt"/>
+          <Btn v="ghost" sz="sm" onClick={()=>inp.current&&inp.current.click()} dis={uploadBusy}>+ Adjuntar archivo (max 1.5MB)</Btn>
           <div style={{fontSize:10,color:T.ink3,marginTop:4}}>Formatos: PDF, Word, imagenes. Max 1.5MB por archivo.</div>
+          {uploadBusy&&<div style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:T.ink3,marginTop:6}}><Sp/> {uploadMsg}</div>}
+          {!uploadBusy&&uploadMsg&&<div style={{fontSize:11,color:uploadSeverity==="error"?T.red:uploadSeverity==="success"?T.green:T.ink3,marginTop:6,padding:"6px 10px",background:uploadSeverity==="error"?T.redBg:uploadSeverity==="success"?T.greenBg:"transparent",border:uploadSeverity==="error"?"1px solid "+T.red:uploadSeverity==="success"?"1px solid "+T.green:"1px solid "+T.rule}}>{uploadMsg}</div>}
         </>
       )}
     </div>
@@ -317,9 +357,72 @@ function FileUpload({files,onAdd,onRemove,canEdit=true}){
 function AuthPage({onLogin}){
   const [mode,setMode]=useState("login");
   const [email,setEmail]=useState("");const [pw,setPw]=useState("");const [name,setName]=useState("");const [pw2,setPw2]=useState("");const [role,setRole]=useState("student");const [step,setStep]=useState(1);const [err,setErr]=useState("");const [busy,setBusy]=useState(false);const [demo,setDemo]=useState(false);const [regOk,setRegOk]=useState("");
+  const [showResetPanel,setShowResetPanel]=useState(false);
+  const [resetEmail,setResetEmail]=useState("");
+  const [resetToken,setResetToken]=useState("");
+  const [resetNewPw,setResetNewPw]=useState("");
+  const [resetNewPw2,setResetNewPw2]=useState("");
+  const [resetMsg,setResetMsg]=useState("");
+  const [resetErr,setResetErr]=useState("");
+  const [resetStage,setResetStage]=useState(1);
+  const [resetBusy,setResetBusy]=useState(false);
 
   const reset=()=>{setEmail("");setPw("");setName("");setPw2("");setErr("");setStep(1);setRegOk("");};
   const switchMode=m=>{setMode(m);reset();};
+
+  const openResetPanel=()=>{
+    setResetEmail(email);
+    setResetToken("");
+    setResetNewPw("");
+    setResetNewPw2("");
+    setResetMsg("");
+    setResetErr("");
+    setResetStage(1);
+    setShowResetPanel(true);
+  };
+  const closeResetPanel=()=>{setShowResetPanel(false);setResetStage(1);setResetErr("");setResetMsg("");};
+  const requestResetToken=async()=>{
+    setResetErr("");
+    const targetEmail=resetEmail.trim().toLowerCase();
+    if(!targetEmail||!targetEmail.includes("@")){setResetErr("Correo invalido");return;}
+    const users=await DB.getUsers();
+    const target=users.find(u=>u.email.toLowerCase()===targetEmail);
+    if(!target){setResetErr("Correo no registrado");return;}
+    setResetBusy(true);
+    const now=Date.now();
+    const tokens=(await DB.getResetTokens()).filter(t=>t.expiresAt&&t.expiresAt>now).filter(t=>t.email!==targetEmail);
+    const token=Math.random().toString(36).slice(2,8).toUpperCase();
+    const newToken={id:"reset_"+now,email:targetEmail,token,expiresAt:now+1000*60*60};
+    await DB.setResetTokens([...tokens,newToken]);
+    setResetBusy(false);
+    setResetStage(2);
+    setResetToken(token);
+    setResetMsg("Token listo. En entorno real se enviaria por correo; aqui puedes copiarlo.");
+  };
+  const completeReset=async()=>{
+    setResetErr("");
+    const targetEmail=resetEmail.trim().toLowerCase();
+    if(!resetToken.trim()){setResetErr("Ingresa el token de recuperacion");return;}
+    if(resetNewPw.length<6){setResetErr("La nueva contrasena debe tener al menos 6 caracteres");return;}
+    if(resetNewPw!==resetNewPw2){setResetErr("Las contrasenas no coinciden");return;}
+    setResetBusy(true);
+    const tokens=await DB.getResetTokens();
+    const match=tokens.find(t=>t.email===targetEmail&&t.token===resetToken&&t.expiresAt>Date.now());
+    if(!match){setResetErr("Token invalido o vencido");setResetBusy(false);return;}
+    const auth=await DB.getAuth();
+    const key=Object.keys(auth).find(k=>k.toLowerCase()===targetEmail);
+    if(!key){setResetErr("Cuenta no encontrada");setResetBusy(false);return;}
+    auth[key]={pw:resetNewPw,mustChange:false};
+    await DB.setAuth(auth);
+    await DB.setResetTokens(tokens.filter(t=>t.id!==match.id));
+    setResetBusy(false);
+    setResetStage(3);
+    setResetMsg("Contrasena actualizada. Ya puedes iniciar sesion.");
+    setMode("login");
+    setStep(1);
+    setEmail(targetEmail);
+    setTimeout(()=>{closeResetPanel();},2000);
+  };
 
   const loginNext=async()=>{
     if(!email.trim()){setErr("Ingresa tu correo");return;}
@@ -410,6 +513,7 @@ function AuthPage({onLogin}){
                     <Inp type="password" value={pw} onChange={e=>{setPw(e.target.value);setErr("");}} onKeyDown={e=>e.key==="Enter"&&loginDo()} placeholder="..." s={{marginBottom:err?8:16}} autoFocus/>
                     {err&&<div style={{fontSize:11,color:T.red,marginBottom:12,padding:"7px 10px",background:T.redBg}}>{err}</div>}
                     <Btn v="primary" sz="lg" onClick={loginDo} dis={busy} s={{width:"100%",justifyContent:"center"}}>{busy?<><Sp/>&nbsp;Verificando...</>:"Iniciar sesion"}</Btn>
+                    <div style={{marginTop:12,textAlign:"center",fontSize:11}}><button type="button" onClick={openResetPanel} style={{background:"none",border:"none",color:T.accent,cursor:"pointer",fontWeight:600,padding:0}}>¿Olvidaste tu contraseña?</button></div>
                   </>
                 )}
               </>
@@ -448,6 +552,43 @@ function AuthPage({onLogin}){
               </>
             )}
           </div>
+          {showResetPanel&&(
+            <div style={{width:"100%",maxWidth:400,margin:"12px auto 18px"}}>
+              <Card s={{padding:"18px 20px"}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+                  <div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:18,color:T.ink}}>Restablecer contraseña</div>
+                  <button type="button" onClick={closeResetPanel} style={{background:"none",border:"none",color:T.ink3,fontSize:11,cursor:"pointer"}}>Cerrar</button>
+                </div>
+                <div style={{fontSize:11,color:T.ink3,marginBottom:12,lineHeight:1.4}}>
+                  Solicita un token para actualizar tu contraseña. El token dura 60 minutos y puede copiarse aquí para pruebas locales.
+                </div>
+                {resetMsg&&resetStage!==3&&<div style={{fontSize:11,color:T.green,marginBottom:10,padding:"8px",background:T.greenBg,border:"1px solid "+T.green}}>{resetMsg} {resetToken&&<span style={{fontWeight:700}}>{resetToken}</span>}</div>}
+                {resetStage===1&&(
+                  <>
+                    <Lbl c="Correo electronico" s={{marginBottom:5}}/>
+                    <Inp value={resetEmail} onChange={e=>{setResetEmail(e.target.value);setResetErr("");}} placeholder="nombre@universidad.cl" s={{marginBottom:12}}/>
+                    <Btn v="primary" sz="md" onClick={requestResetToken} dis={resetBusy} s={{width:"100%",justifyContent:"center"}}>{resetBusy?<><Sp/>&nbsp;Generando token...</>:"Solicitar token"}</Btn>
+                  </>
+                )}
+                {resetStage===2&&(
+                  <>
+                    <Lbl c="Token" s={{marginBottom:5}}/>
+                    <Inp value={resetToken} onChange={e=>setResetToken(e.target.value)} placeholder="XXXXXX" s={{marginBottom:12}}/>
+                    <Lbl c="Nueva contrasena" s={{marginBottom:5}}/>
+                    <Inp type="password" value={resetNewPw} onChange={e=>{setResetNewPw(e.target.value);setResetErr("");}} placeholder="Minimo 6 caracteres" s={{marginBottom:12}}/>
+                    <Lbl c="Confirmar contrasena" s={{marginBottom:5}}/>
+                    <Inp type="password" value={resetNewPw2} onChange={e=>{setResetNewPw2(e.target.value);setResetErr("");}} placeholder="Repite la contrasena" s={{marginBottom:12}} onKeyDown={e=>e.key==="Enter"&&completeReset()}/>
+                    {resetErr&&<div style={{fontSize:11,color:T.red,marginBottom:10,padding:"7px 10px",background:T.redBg}}>{resetErr}</div>}
+                    <Btn v="primary" sz="md" onClick={completeReset} dis={resetBusy} s={{width:"100%",justifyContent:"center"}}>{resetBusy?<><Sp/>&nbsp;Actualizando...</>:"Actualizar contraseña"}</Btn>
+                  </>
+                )}
+                {resetErr&&resetStage===1&&<div style={{fontSize:11,color:T.red,marginTop:10,padding:"7px 10px",background:T.redBg}}>{resetErr}</div>}
+                {resetStage===3&&(
+                  <div style={{fontSize:12,color:T.green,background:T.greenBg,padding:"10px",border:"1px solid "+T.green}}>{resetMsg}</div>
+                )}
+              </Card>
+            </div>
+          )}
           <div style={{padding:"10px 14px",background:T.bg,border:"1px solid "+T.rule,fontSize:11,color:T.ink3}}>
             {mode==="login"?<>No tienes cuenta? <button onClick={()=>switchMode("register")} style={{background:"none",border:"none",color:T.accent,cursor:"pointer",fontSize:11,fontWeight:600,padding:0}}>Crear cuenta</button></>:<>Ya tienes cuenta? <button onClick={()=>switchMode("login")} style={{background:"none",border:"none",color:T.accent,cursor:"pointer",fontSize:11,fontWeight:600,padding:0}}>Iniciar sesion</button></>}
             <span style={{margin:"0 8px",color:T.rule}}>|</span><span style={{cursor:"pointer",color:T.accent}} onClick={()=>setDemo(true)}>Cuentas demo</span>
@@ -479,8 +620,11 @@ const AISYS="Eres un asistente del Seminario de Titulo de la Escuela de Diseno U
 function AiAssistant({user}){
   const hi="Hola "+user.name.split(" ")[0]+" - Soy tu asistente del Seminario. Puedo ayudarte con tus etapas, criterios de evaluacion, metodologia o retroalimentacion. En que estas trabajando?";
   const [msgs,setMsgs]=useState([{role:"assistant",content:hi}]);const [inp,setInp]=useState("");const [busy,setBusy]=useState(false);const [errt,setErrt]=useState("");const bot=useRef(null);
+  const proxyUrl=(import.meta.env.VITE_ANTHROPIC_PROXY_URL||"").trim();
+  const aiModel=import.meta.env.VITE_ANTHROPIC_MODEL||"claude-2.1";
+  const hasProxy=Boolean(proxyUrl);
   useEffect(()=>{bot.current&&bot.current.scrollIntoView({behavior:"smooth"});},[msgs]);
-  const send=async()=>{const txt=inp.trim();if(!txt||busy)return;const next=[...msgs,{role:"user",content:txt}];setMsgs(next);setInp("");setBusy(true);setErrt("");try{const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:1000,system:AISYS,messages:next.map(m=>({role:m.role,content:m.content}))})});const d=await res.json();if(d.error){setErrt("Error: "+d.error.message);setBusy(false);return;}const r=(d.content||[]).find(b=>b.type==="text");setMsgs(p=>[...p,{role:"assistant",content:r?r.text:"Sin respuesta."}]);}catch(e){setErrt("Error de conexion.");}setBusy(false);};
+  const send=async()=>{const txt=inp.trim();if(!txt||busy){return;}if(!hasProxy){setErrt("Activa VITE_ANTHROPIC_PROXY_URL para habilitar el asistente.");return;}const next=[...msgs,{role:"user",content:txt}];setMsgs(next);setInp("");setBusy(true);setErrt("");try{const res=await fetch(proxyUrl,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:aiModel,messages:next.map(m=>({role:m.role,content:m.content})),meta:{userId:user.id}})});const payload=await res.json().catch(()=>null);if(!res.ok){setErrt("Proxy: "+(payload?.message||res.statusText));setBusy(false);return;}const assistantText=payload?.response?.content?.[0]?.text||payload?.content?.[0]?.text||payload?.text||payload?.message;setMsgs(p=>[...p,{role:"assistant",content:assistantText||"Sin respuesta desde el proxy."}]);}catch(e){setErrt("Error de conexion con el proxy.");}setBusy(false);};
   const sugs=user.role==="student"?["Como formulo mi pregunta de investigacion?","Que son los IOV?","Como identifico mi unidad de analisis?","Que se evalua en nota proceso?"]:["Como dar retroalimentacion efectiva?","Como evaluar la delimitacion del problema?","Explica la rubrica de nota proceso","Que diferencia un buen problema de diseno?"];
   return (
     <div style={{flex:1,display:"flex",flexDirection:"column",height:"100%",maxWidth:820}} className="fu">
@@ -490,6 +634,7 @@ function AiAssistant({user}){
           <div><div style={{fontFamily:"'Cormorant Garamond',serif",fontSize:20}}>Asistente de Seminario</div><div style={{fontSize:10,color:T.ink3}}>Powered by Claude - Especializado en Diseno UC</div></div>
         </div>
       </div>
+      {!hasProxy&&<div style={{padding:"10px 22px",background:"#fff4eb",borderBottom:"1px solid #f1d7c4",color:"#a4490a",fontSize:12}}>El asistente requiere un proxy con clave protegida. Define <code style={{fontSize:11}}>VITE_ANTHROPIC_PROXY_URL</code> apuntando a tu servidor que maneje el key (puede usar la API de Anthropic o un proxy propio) y vuelve a cargar.</div>}
       <div style={{flex:1,overflowY:"auto",padding:"16px 22px",display:"flex",flexDirection:"column",gap:12}}>
         {msgs.map((m,i)=>(
           <div key={i} style={{display:"flex",gap:10,flexDirection:m.role==="user"?"row-reverse":"row"}}>
@@ -505,7 +650,7 @@ function AiAssistant({user}){
       <div style={{padding:"10px 22px",borderTop:"1px solid "+T.rule,background:T.surface,flexShrink:0}}>
         <div style={{display:"flex",gap:8,alignItems:"flex-end"}}>
           <Txa value={inp} onChange={e=>setInp(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send();}}} placeholder="Escribe tu pregunta... (Enter enviar)" rows={2} s={{flex:1,fontSize:13,resize:"none",maxHeight:100}}/>
-          <Btn v="primary" sz="md" onClick={send} dis={!inp.trim()||busy} s={{padding:"10px 15px",height:40,flexShrink:0}}>{busy?<Sp/>:"->"}</Btn>
+          <Btn v="primary" sz="md" onClick={send} dis={!inp.trim()||busy||!hasProxy} s={{padding:"10px 15px",height:40,flexShrink:0}}>{busy?<Sp/>:"->"}</Btn>
         </div>
         <div style={{fontSize:9,color:T.ink3,marginTop:5}}>Respuestas generadas por IA - Valida siempre con tu profesor/a</div>
       </div>
@@ -1003,7 +1148,7 @@ function SectionConfig({section,onSave}){
 function StudentManager({section,students,allUsers,onRemoveStudent}){
   const [email,setEmail]=useState("");const [err,setErr]=useState("");const [ok,setOk]=useState("");const [invites,setInvites]=useState([]);const [busy,setBusy]=useState(false);
 
-  useEffect(()=>{(async()=>{const all=await DB.getInvites();setInvites(all.filter(i=>i.sectionId===section.id));})();},[section.id]);
+  useEffect(()=>{(async()=>{const all=await DB.getInvites();const now=Date.now();const valid=all.filter(i=>!i.expiresAt||i.expiresAt>now);if(valid.length!==all.length)await DB.setInvites(valid);setInvites(valid.filter(i=>i.sectionId===section.id));})();},[section.id]);
 
   const addInvite=async()=>{
     setErr("");setOk("");const el=email.trim().toLowerCase();
@@ -1012,7 +1157,7 @@ function StudentManager({section,students,allUsers,onRemoveStudent}){
     const[users,inv]=await Promise.all([DB.getUsers(),DB.getInvites()]);
     if(users.find(u=>u.email.toLowerCase()===el)){setErr("Este correo ya tiene cuenta registrada.");setBusy(false);return;}
     if(inv.find(i=>i.email.toLowerCase()===el)){setErr("Este correo ya fue invitado.");setBusy(false);return;}
-    const newInv={id:"inv_"+Date.now(),email:el,sectionId:section.id,profId:section.profId,addedAt:new Date().toLocaleDateString("es-CL")};
+    const newInv={id:"inv_"+Date.now(),email:el,sectionId:section.id,profId:section.profId,addedAt:new Date().toLocaleDateString("es-CL"),expiresAt:Date.now()+7*24*60*60*1000};
     const updInv=[...inv,newInv];await DB.setInvites(updInv);
     setInvites(updInv.filter(i=>i.sectionId===section.id));
     setEmail("");setOk("Invitacion guardada. Al registrarse, el estudiante queda en tu seccion.");
@@ -1044,7 +1189,10 @@ function StudentManager({section,students,allUsers,onRemoveStudent}){
               <div key={inv.id} style={{display:"flex",alignItems:"center",gap:12,padding:"9px 14px",background:T.amberBg,border:"1px solid "+T.amber}}>
                 <div style={{width:8,height:8,background:T.amber,borderRadius:"50%"}}/>
                 <span style={{flex:1,fontSize:12,color:T.ink}}>{inv.email}</span>
-                <span style={{fontSize:10,color:T.ink3}}>Invitado {inv.addedAt}</span>
+                <span style={{fontSize:10,color:T.ink3}}>
+                  Invitado {inv.addedAt}
+                  {inv.expiresAt&&" • Vence "+new Date(inv.expiresAt).toLocaleDateString("es-CL")}
+                </span>
                 <Btn v="danger" sz="sm" onClick={()=>removeInvite(inv.id)}>X</Btn>
               </div>
             ))}
@@ -1219,31 +1367,34 @@ export default function App(){
   if(mustChg)return <div style={{minHeight:"100vh",background:T.bg,display:"flex",alignItems:"center",justifyContent:"center",padding:24}} className="fu"><GS/><div style={{width:"100%",maxWidth:380,background:T.surface,border:"1px solid "+T.rule}}><ChangePw user={user} forced onDone={()=>setMustChg(false)}/></div></div>;
 
   return (
-    <div style={{display:"flex",height:"100vh",overflow:"hidden"}}>
-      <GS/>
-      <Sidebar user={user} view={view} setView={setView} section={curSec} sections={sections} onSelectSection={selSec} onLogout={handleLogout} open={sbOpen} onClose={()=>setSbOpen(false)}/>
-      <div style={{flex:1,display:"flex",flexDirection:"column",height:"100vh",overflow:"hidden",marginLeft:0}}>
-        <div style={{height:44,background:T.surface,borderBottom:"1px solid "+T.rule,display:"flex",alignItems:"center",padding:"0 16px",gap:12,flexShrink:0,zIndex:10}}>
-          <button onClick={()=>setSbOpen(v=>!v)} style={{background:"none",border:"1px solid "+T.rule,padding:"5px 8px",cursor:"pointer",color:T.ink2,fontSize:13,lineHeight:1,minWidth:32,borderRadius:2}}>{sbOpen?"X":"="}</button>
-          <span style={{fontSize:11,color:T.ink,fontWeight:500}}>{VN[view]||view}</span>
-          {curSec&&user&&user.role==="professor"&&<span style={{fontSize:10,color:T.ink3}}>{curSec.code}</span>}
-          {myPeerAssigns.length>0&&<div style={{marginLeft:"auto",padding:"4px 10px",background:T.violetBg,border:"1px solid "+T.violet,fontSize:11,color:T.violet,fontWeight:700}}>{myPeerAssigns.length} revision(es) pendiente(s)</div>}
-          <div style={{flex:1}}/>
-          <Av t={user.av||user.name.slice(0,2)} sz={26}/>
-        </div>
-        <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column"}}>
-          {view==="changepw"&&<div style={{flex:1,overflowY:"auto",padding:24}}><ChangePw user={user} onDone={()=>setView(user.role==="professor"?curSec?"panel":"home":"proyecto")}/></div>}
-          {view==="asistente"&&<AiAssistant user={user}/>}
-          {view==="home"&&user.role==="professor"&&<ProfHome user={user} sections={sections} allUsers={allUsers} onSelectSection={selSec} onCreateSection={createSec}/>}
-          {view==="panel"&&user.role==="professor"&&curSec&&<ProfPanel students={secStudentsData} section={curSec} allStudents={secStudents} onUpdateStudent={profUpdStu} onAssignPeer={assignPeer}/>}
-          {view==="gantt"&&user.role==="professor"&&curSec&&<GanttView user={user} gantt={ganttData[curSec.id]||IGANG} onUpdate={g=>updGantt(curSec.id,g)}/>}
-          {view==="recursos"&&user.role==="professor"&&curSec&&<Resources user={user} resources={resData[curSec.id]||[]} onUpdate={r=>updRes(curSec.id,r)} section={curSec}/>}
-          {view==="config"&&user.role==="professor"&&curSec&&<SectionConfig section={curSec} onSave={updSec}/>}
-          {view==="estudiantes"&&user.role==="professor"&&curSec&&<StudentManager section={curSec} students={secStudents} allUsers={allUsers} onRemoveStudent={rmStu}/>}
-          {view==="proyecto"&&user.role==="student"&&myStages&&<StudentProject user={user} stages={myStages} onUpdateStages={s=>updStuStages(user.id,s)} section={mySection} peerAssignments={peerAssigns} onPeerSubmit={submitPeer}/>}
-          {view==="proceso"&&user.role==="student"&&<div style={{flex:1,overflowY:"auto",padding:"16px 20px"}}><Timeline/></div>}
-          {view==="gantt"&&user.role==="student"&&mySection&&<GanttView user={user} gantt={ganttData[mySection.id]||IGANG}/>}
-          {view==="recursos"&&user.role==="student"&&<Resources user={user} resources={mySection?resData[mySection.id]||[]:[]} onUpdate={r=>mySection&&updRes(mySection.id,r)} section={mySection}/>}
+    <div className="app-shell">
+      <div className="app-layout" style={{display:"flex",height:"100vh",overflow:"hidden"}}>
+        <GS/>
+        <Sidebar user={user} view={view} setView={setView} section={curSec} sections={sections} onSelectSection={selSec} onLogout={handleLogout} open={sbOpen} onClose={()=>setSbOpen(false)}/>
+        <div className="app-content" style={{flex:1,display:"flex",flexDirection:"column",height:"100vh",overflow:"hidden",minWidth:0}}>
+          <div className="app-header" style={{height:44,background:T.surface,borderBottom:"1px solid "+T.rule,display:"flex",alignItems:"center",padding:"0 16px",gap:12,flexShrink:0,zIndex:10}}>
+            <button onClick={()=>setSbOpen(v=>!v)} style={{background:"none",border:"1px solid "+T.rule,padding:"5px 8px",cursor:"pointer",color:T.ink2,fontSize:13,lineHeight:1,minWidth:32,borderRadius:2}}>{sbOpen?"X":"="}</button>
+            <span style={{fontSize:11,color:T.ink,fontWeight:500}}>{VN[view]||view}</span>
+            {curSec&&user&&user.role==="professor"&&<span style={{fontSize:10,color:T.ink3}}>{curSec.code}</span>}
+            {myPeerAssigns.length>0&&<div style={{marginLeft:"auto",padding:"4px 10px",background:T.violetBg,border:"1px solid "+T.violet,fontSize:11,color:T.violet,fontWeight:700}}>{myPeerAssigns.length} revision(es) pendiente(s)</div>}
+            <div style={{fontSize:10,color:T.ink3,fontWeight:600}} aria-label="Version beta 1">version beta_1</div>
+            <div style={{flex:1}}/>
+            <Av t={user.av||user.name.slice(0,2)} sz={26}/>
+          </div>
+          <div className="app-main" style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column"}}>
+            {view==="changepw"&&<div style={{flex:1,overflowY:"auto",padding:24}}><ChangePw user={user} onDone={()=>setView(user.role==="professor"?curSec?"panel":"home":"proyecto")}/></div>}
+            {view==="asistente"&&<AiAssistant user={user}/>}
+            {view==="home"&&user.role==="professor"&&<ProfHome user={user} sections={sections} allUsers={allUsers} onSelectSection={selSec} onCreateSection={createSec}/>}
+            {view==="panel"&&user.role==="professor"&&curSec&&<ProfPanel students={secStudentsData} section={curSec} allStudents={secStudents} onUpdateStudent={profUpdStu} onAssignPeer={assignPeer}/>}
+            {view==="gantt"&&user.role==="professor"&&curSec&&<GanttView user={user} gantt={ganttData[curSec.id]||IGANG} onUpdate={g=>updGantt(curSec.id,g)}/>}
+            {view==="recursos"&&user.role==="professor"&&curSec&&<Resources user={user} resources={resData[curSec.id]||[]} onUpdate={r=>updRes(curSec.id,r)} section={curSec}/>}
+            {view==="config"&&user.role==="professor"&&curSec&&<SectionConfig section={curSec} onSave={updSec}/>}
+            {view==="estudiantes"&&user.role==="professor"&&curSec&&<StudentManager section={curSec} students={secStudents} allUsers={allUsers} onRemoveStudent={rmStu}/>}
+            {view==="proyecto"&&user.role==="student"&&myStages&&<StudentProject user={user} stages={myStages} onUpdateStages={s=>updStuStages(user.id,s)} section={mySection} peerAssignments={peerAssigns} onPeerSubmit={submitPeer}/>}
+            {view==="proceso"&&user.role==="student"&&<div style={{flex:1,overflowY:"auto",padding:"16px 20px"}}><Timeline/></div>}
+            {view==="gantt"&&user.role==="student"&&mySection&&<GanttView user={user} gantt={ganttData[mySection.id]||IGANG}/>}
+            {view==="recursos"&&user.role==="student"&&<Resources user={user} resources={mySection?resData[mySection.id]||[]:[]} onUpdate={r=>mySection&&updRes(mySection.id,r)} section={mySection}/>}
+          </div>
         </div>
       </div>
     </div>
